@@ -151,7 +151,7 @@ class GunDealsClient(SiteClient):
         Empty list = caliber unknown to their facet (caller falls back to
         text search)."""
         from . import calibers
-        from .base import _norm_cal
+        from .calibers import _norm as _norm_cal
         try:
             body = fetch(f"{BASE}/category/rifles", timeout=30)
         except FetchError:

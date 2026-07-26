@@ -256,8 +256,8 @@ function cardHtml(l) {
     : '<div class="noimg">no photo</div>';
   const priceLine = priceCol ? cell(priceCol, l) : priceHtml(l);
   return `
-    <div class="card">
-      <div class="card-img" title="Click to enlarge">${img}</div>
+    <div class="card" data-url="${esc(l.url)}" title="Open listing">
+      <div class="card-img">${img}</div>
       <div class="card-body">
         <a class="card-title" href="${esc(l.url)}" target="_blank" rel="noopener" title="${esc(l.title)}">${esc(l.title)}</a>
         ${chips.length ? `<div class="card-chips">${chips.join(' ')}</div>` : ''}
@@ -346,6 +346,7 @@ async function runSearch() {
     method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(c),
   });
   currentSearch = (await r.json()).search_id;
+  rememberSearch(c);
   pollTimer = setInterval(poll, 1200);
   poll();
 }
@@ -367,7 +368,6 @@ async function poll() {
   }
 }
 function onSearchDone() {
-  loadHistory();
   const nNew = rows.filter(l => l.is_new).length;
   if (watchMinutes > 0) {
     scheduleWatch();
@@ -424,34 +424,42 @@ function scheduleWatch() {
   }, 1000);
 }
 
-/* ---------------- history ---------------- */
-const histCache = {};
-async function loadHistory() {
-  const list = await (await fetch(`/api/searches?vertical=${VERTICAL}`)).json();
-  $('historyList').innerHTML = list.slice(0, 8).map(s => {
-    const c = s.criteria; histCache[s.id] = c;
+/* ---------------- history (client-side, this session only) ----------------
+   Only the INPUTS of past searches are remembered — never results — and only
+   in this browser's sessionStorage, so history dies with the session and the
+   server keeps nothing about who searched for what. Clicking an item just
+   prefills the form. */
+const HIST_MAX = 8;
+function histKey() { return 'gs_hist_' + VERTICAL; }
+function histList() {
+  try { return JSON.parse(sessionStorage.getItem(histKey())) || []; }
+  catch (e) { return []; }
+}
+function rememberSearch(c) {
+  const sig = JSON.stringify(c);
+  const list = histList().filter(h => JSON.stringify(h.criteria) !== sig);
+  list.unshift({criteria: c, at: Date.now()});
+  try { sessionStorage.setItem(histKey(), JSON.stringify(list.slice(0, HIST_MAX))); }
+  catch (e) { /* storage unavailable — history is a nicety, searching still works */ }
+  loadHistory();
+}
+function loadHistory() {
+  const list = histList();
+  $('historyList').innerHTML = list.map((h, i) => {
+    const c = h.criteria;
     const bits = [c.keyword, c.manufacturer, c.caliber,
       c.condition && c.condition !== 'both' ? c.condition : '',
       c.price_max != null ? '≤$' + c.price_max : ''].filter(Boolean);
-    const when = new Date(s.created_at * 1000).toLocaleString([], {month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'});
-    return `<div class="hist-item" data-id="${s.id}">${esc(bits.join(' · ') || '(broad search)')}
-      <small>${s.found} hits · ${when}</small></div>`;
+    const when = new Date(h.at).toLocaleString([], {month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'});
+    return `<div class="hist-item" data-i="${i}" title="Prefill these filters">${esc(bits.join(' · ') || '(broad search)')}
+      <small>${when}</small></div>`;
   }).join('');
   document.querySelectorAll('.hist-item').forEach(el => el.onclick = () => {
-    const id = parseInt(el.dataset.id, 10);
-    restoreSearch(id, histCache[id]);
-  });
-}
-function restoreSearch(id, c) {
-  fillForm(c);
-  document.querySelectorAll('.site').forEach(cb => cb.checked = !c.sites || !c.sites.length || c.sites.includes(cb.value));
-  clearInterval(pollTimer);
-  currentSearch = id; rows = []; lastId = 0; $('messages').innerHTML = '';
-  fetch(`/api/search/${id}`).then(r => r.json()).then(s => {
-    renderStatus(s.clients, s.status);
-    rows = s.listings; lastId = rows.length ? rows[rows.length - 1].id : 0;
-    renderRows();
-    if (!rows.length) $('empty').textContent = 'No stored results — hit Search to re-run.';
+    const h = histList()[parseInt(el.dataset.i, 10)];
+    if (!h) return;
+    fillForm(h.criteria);
+    document.querySelectorAll('.site').forEach(cb =>
+      cb.checked = !h.criteria.sites || !h.criteria.sites.length || h.criteria.sites.includes(cb.value));
   });
 }
 
@@ -477,9 +485,12 @@ $('quickFilter').oninput = () => renderRows();
 /* ---------------- lightbox ---------------- */
 const lightbox = $('lightbox');
 function openLightbox(src) { lightbox.querySelector('img').src = src; lightbox.hidden = false; }
+/* grid: a click anywhere on a card opens the listing (no photo lightbox) */
 $('grid').addEventListener('click', e => {
-  const box = e.target.closest('.card-img'); const img = box && box.querySelector('img');
-  if (img) openLightbox(img.src);
+  const card = e.target.closest('.card');
+  if (!card || !card.dataset.url) return;
+  if (e.target.closest('a')) return;   // the title link already navigates itself
+  window.open(card.dataset.url, '_blank', 'noopener');
 });
 $('tbody').addEventListener('click', e => { if (e.target.matches('td img')) openLightbox(e.target.src); });
 lightbox.onclick = () => { lightbox.hidden = true; lightbox.querySelector('img').src = ''; };
@@ -526,54 +537,23 @@ $('healthBtn').onclick = async () => {
   finally { $('healthBtn').disabled = false; $('healthBtn').textContent = 'Check site health'; }
 };
 
-/* ---------------- right-click delete a recent search ---------------- */
-const ctxMenu = $('ctxMenu'); let ctxSearchId = null;
-$('historyList').addEventListener('contextmenu', e => {
-  const item = e.target.closest('.hist-item'); if (!item) return;
-  e.preventDefault(); ctxSearchId = parseInt(item.dataset.id, 10);
-  ctxMenu.innerHTML = '<div data-act="delete">Delete this search</div>';
-  ctxMenu.hidden = false;
-  ctxMenu.style.left = Math.min(e.clientX, innerWidth - ctxMenu.offsetWidth - 6) + 'px';
-  ctxMenu.style.top = Math.min(e.clientY, innerHeight - ctxMenu.offsetHeight - 6) + 'px';
-});
-function closeCtx() { ctxMenu.hidden = true; ctxSearchId = null; }
-document.addEventListener('mousedown', e => { if (!ctxMenu.contains(e.target)) closeCtx(); });
-document.addEventListener('keydown', e => { if (e.key === 'Escape') closeCtx(); });
-window.addEventListener('blur', closeCtx);
-ctxMenu.addEventListener('click', async e => {
-  if (e.target.dataset.act !== 'delete' || ctxSearchId == null) return;
-  const id = ctxSearchId; closeCtx();
-  const r = await fetch(`/api/search/${id}`, {method: 'DELETE'});
-  if (r.status === 404) { loadHistory(); return; }
-  if (!r.ok) { alert('Delete failed: HTTP ' + r.status); return; }
-  if (currentSearch === id) {
-    clearInterval(pollTimer); currentSearch = null; rows = []; lastId = 0;
-    $('statusBar').innerHTML = ''; $('messages').innerHTML = ''; renderRows();
-    $('empty').innerHTML = 'Search deleted. Set your filters and hit <b>Search</b>.';
-    $('searchBtn').disabled = false;
-  }
-  loadHistory();
-});
-
-/* ---------------- clear all data ---------------- */
-$('clearBtn').onclick = async () => {
-  if (!confirm('Delete ALL stored data (every engine)? Every search, listing, price '
-    + 'history and health record will be permanently erased.')) return;
-  $('clearBtn').disabled = true; $('clearBtn').textContent = 'Clearing…';
-  try {
-    const r = await fetch('/api/clear', {method: 'POST'});
-    if (!r.ok) throw new Error('HTTP ' + r.status);
-    const cleared = (await r.json()).cleared || {};
-    clearInterval(pollTimer); clearTimeout(watchTimer); clearInterval(watchTick);
-    watchMinutes = 0; $('watchSel').value = '0'; $('watchStatus').textContent = '';
-    document.title = SCHEMA.label + ' — Gun Scout';
-    currentSearch = null; rows = []; lastId = 0; hiddenSites.clear();
-    $('statusBar').innerHTML = ''; $('messages').innerHTML = ''; $('healthPanel').innerHTML = '';
-    renderRows();
-    $('empty').innerHTML = `All data cleared (${(cleared.listings || 0).toLocaleString()} listings deleted). Set your filters and hit <b>Search</b>.`;
-    loadHistory(); $('searchBtn').disabled = false;
-  } catch (e) { alert('Clear failed: ' + e); }
-  finally { $('clearBtn').disabled = false; $('clearBtn').textContent = 'Clear all data'; }
+/* ---------------- clear search (client-side only) ----------------
+   Resets the form to defaults and empties the results table. Deletes
+   nothing: history keeps its entries and the server (which only ever holds
+   in-flight results transiently) is not called at all. */
+$('clearSearchBtn').onclick = () => {
+  clearInterval(pollTimer); clearTimeout(watchTimer); clearInterval(watchTick);
+  watchMinutes = 0; $('watchSel').value = '0'; $('watchStatus').textContent = '';
+  document.title = SCHEMA.label + ' — Gun Scout';
+  currentSearch = null; rows = []; lastId = 0; hiddenSites.clear();
+  lastClients = []; lastStatus = 'done';
+  $('statusBar').innerHTML = ''; $('messages').innerHTML = '';
+  $('quickFilter').value = '';
+  fillForm({});   // every input back to its schema default
+  document.querySelectorAll('.site').forEach(cb => cb.checked = true);
+  renderRows();
+  $('empty').innerHTML = 'Search cleared. Set your filters and hit <b>Search</b>.';
+  $('searchBtn').disabled = false;
 };
 
 /* ---------------- wiring that needs the schema ---------------- */

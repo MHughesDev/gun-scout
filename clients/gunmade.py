@@ -354,7 +354,7 @@ class GunMadeClient(SiteClient):
         the vocabulary from page 1's facet aggregation and keep every spelling
         that resolves to the requested canonical caliber."""
         from . import calibers
-        from .base import _norm_cal
+        from .calibers import _norm as _norm_cal
         try:
             root = self._fetch_root(dict(base_params))
         except (ClientBlocked, StructureError):

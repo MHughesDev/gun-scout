@@ -1,23 +1,37 @@
-"""Gun Scout — local multi-vertical listing search aggregator.
+"""Gun Scout — multi-vertical listing search aggregator.
 
 Three engines (guns / parts / ammo) share one backend; each is described by a
-Vertical descriptor (see verticals/). Run:  python app.py  (http://127.0.0.1:8777)
+Vertical descriptor (see verticals/).
+
+Run locally:   python app.py                    (http://127.0.0.1:8777)
+Cloud deploy:  set PORT (free hosts inject it) — the app binds 0.0.0.0 and
+               serves via waitress. State is multi-user by design: the stats
+               fact store and site tokens/keys (CABELAS_COVEO_TOKEN /
+               cabelas_token.json, GUNBROKER_DEV_KEY) are shared server-side
+               across all visitors; per-user search state is RAM-only and
+               short-lived; search history never leaves the visitor's browser.
+               Point GUN_SCOUT_DB at a persistent volume so stats survive
+               redeploys. Run a single process (1 worker) — the fact store
+               lives in process memory.
 """
 import logging
+import os
 
 from flask import Flask, jsonify, request, send_from_directory
 
 import close_poller
-import db
 import search_manager
+import statstore
 import stats as stats_mod
+import store
 import verticals
 from models import SearchCriteria
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
 
 app = Flask(__name__, static_folder="static", static_url_path="")
-db.init_db()
+statstore.start()  # load facts, migrate any legacy db, start write-behind flusher
+close_poller.start()  # records final hammer prices of ended auctions (idles without an API key)
 
 
 def _vert_or_404(vertical: str):
@@ -91,24 +105,10 @@ def start_search(vertical):
 @app.get("/api/search/<int:search_id>")
 def search_state(search_id):
     after = request.args.get("after", 0, type=int)
-    state = db.get_search_state(search_id, after_id=after)
+    state = store.get_search_state(search_id, after_id=after)
     if state is None:
         return jsonify({"error": "not found"}), 404
     return jsonify(state)
-
-
-@app.get("/api/searches")
-def searches():
-    vertical = request.args.get("vertical")
-    return jsonify(db.list_searches(vertical=vertical))
-
-
-@app.delete("/api/search/<int:search_id>")
-def delete_search(search_id):
-    counts = db.delete_search(search_id)
-    if counts is None:
-        return jsonify({"error": "not found"}), 404
-    return jsonify({"deleted": counts})
 
 
 # ---- stats ---------------------------------------------------------------
@@ -131,14 +131,18 @@ def run_health():
 
 @app.get("/api/health")
 def last_health():
-    return jsonify(db.latest_health())
-
-
-@app.post("/api/clear")
-def clear_data():
-    return jsonify({"cleared": db.clear_all_data()})
+    return jsonify(store.latest_health())
 
 
 if __name__ == "__main__":
-    close_poller.start()  # records final hammer prices of ended auctions
-    app.run(host="127.0.0.1", port=8777, debug=False, threaded=True)
+    # Free cloud hosts inject PORT; its presence is the "public deploy" signal.
+    port = int(os.environ.get("PORT", "8777"))
+    host = os.environ.get("HOST") or ("0.0.0.0" if "PORT" in os.environ
+                                      else "127.0.0.1")
+    try:
+        from waitress import serve  # production WSGI server, pure Python
+        logging.getLogger("gun_scout").info("serving via waitress on %s:%d",
+                                            host, port)
+        serve(app, host=host, port=port, threads=16)
+    except ImportError:
+        app.run(host=host, port=port, debug=False, threaded=True)

@@ -84,11 +84,10 @@
                border-radius: 7px; padding: 7px; font-size: 12px; cursor: pointer; }
   #healthBtn:hover { color: var(--text); border-color: var(--accent); }
   #healthBtn:disabled { color: var(--border); cursor: default; }
-  #clearBtn { background: none; border: 1px solid var(--border); color: var(--muted);
-              border-radius: 7px; padding: 7px; font-size: 12px; cursor: pointer;
-              margin-top: auto; }
-  #clearBtn:hover { color: var(--err); border-color: var(--err); }
-  #clearBtn:disabled { color: var(--border); cursor: default; }
+  #clearSearchBtn { background: none; border: 1px solid var(--border); color: var(--muted);
+                    border-radius: 7px; padding: 7px; font-size: 12px; cursor: pointer;
+                    margin-top: auto; }
+  #clearSearchBtn:hover { color: var(--text); border-color: var(--accent); }
   #healthPanel .hrow { display: flex; align-items: baseline; gap: 6px; font-size: 12px;
                        padding: 3px 0; }
   #healthPanel .hrow .dot { width: 7px; height: 7px; border-radius: 50%;
@@ -208,7 +207,8 @@
           overflow: hidden; display: flex; flex-direction: column;
           transition: border-color .15s; }
   .card:hover { border-color: var(--accent); }
-  .card-img { aspect-ratio: 4 / 3; background: var(--panel2); cursor: zoom-in;
+  .card { cursor: pointer; }   /* the whole card opens the listing */
+  .card-img { aspect-ratio: 4 / 3; background: var(--panel2);
               display: flex; align-items: center; justify-content: center; overflow: hidden; }
   .card-img img { width: 100%; height: 100%; object-fit: contain; display: block;
                   transition: transform .2s; }
@@ -241,14 +241,6 @@
                margin-bottom: 5px; cursor: pointer; font-size: 12px; }
   .hist-item:hover { border-color: var(--accent); background: var(--panel2); }
   .hist-item small { color: var(--muted); display: block; }
-
-  /* ---------- context menu (right-click a recent search) ---------- */
-  #ctxMenu { position: fixed; z-index: 90; min-width: 150px;
-             background: var(--panel2); border: 1px solid var(--border);
-             border-radius: 7px; overflow: hidden; font-size: 13px;
-             box-shadow: 0 8px 22px rgba(0,0,0,.45); }
-  #ctxMenu div { padding: 7px 12px; cursor: pointer; }
-  #ctxMenu div:hover { background: var(--err); color: #0c1015; }
 </style>
 </head>
 <body>
@@ -269,10 +261,10 @@
     <button id="healthBtn" title="Run a canary search against every site to verify the scrapers still parse them">Check site health</button>
     <div id="healthPanel"></div>
     <div id="historyWrap">
-      <h3>Recent searches</h3>
+      <h3>Recent searches <small style="text-transform:none;letter-spacing:0">(this session — click to prefill)</small></h3>
       <div id="historyList"></div>
     </div>
-    <button id="clearBtn" title="Delete every stored search, listing, price history and health record">Clear all data</button>
+    <button id="clearSearchBtn" title="Reset the filters and clear the results table — nothing is deleted">Clear search</button>
   </aside>
 
   <section id="results">
@@ -315,7 +307,6 @@
 </main>
 
 <div id="lightbox" hidden><img referrerpolicy="no-referrer" alt=""></div>
-<div id="ctxMenu" hidden></div>
 
 <script src="/search.js"></script>
 </body>

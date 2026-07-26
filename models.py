@@ -136,7 +136,8 @@ class Listing:
     image: str = ""
     # Vertical-specific fields the clients/parsers fill (ammo: grain, bullet_type,
     # round_count, price_per_round, case_material, in_stock; parts: part_category,
-    # fitment_canon, mpn). Promoted to real DB columns by db._listing_values.
+    # fitment_canon, mpn). Read by store._row_from_listing (display rows) and
+    # statstore.fact_from_listing (stat facts).
     attributes: dict = field(default_factory=dict)
     extra: dict = field(default_factory=dict)
 

@@ -241,6 +241,23 @@ async function loadStats() {
   renderStats();
 }
 
+/* Stats are computed live from the in-memory fact set: while searches run,
+   the engine's version counter moves, so poll quietly and re-render only
+   when something actually changed. Idle polls are memoized server-side. */
+async function pollStats() {
+  if (document.visibilityState !== 'visible') return;
+  try {
+    const d = await (await fetch(`/api/${VERTICAL}/stats?` + statsQuery())).json();
+    if (d.error || (statsData && d.version === statsData.version
+                    && d.group_by === statsData.group_by)) return;
+    statsData = d;
+    priceLabel = d.price_label || 'price';
+    buildGroupOptions(d.group_choices, d.group_by);
+    renderStats();
+  } catch (e) { /* transient poll failure — next tick retries */ }
+}
+setInterval(pollStats, 4000);
+
 function renderStats() {
   const d = statsData;
   if (!d || d.error) {
@@ -264,7 +281,7 @@ function renderStats() {
     + Object.keys(q).map(k => qbit(k, q[k])).filter(Boolean).join(' · ')
     + (d.bundles_excluded_from_prices
        ? ` &nbsp;·&nbsp; ${d.bundles_excluded_from_prices} bundle prices excluded` : '')
-    + ` &nbsp;·&nbsp; ${(d.total_stored || 0).toLocaleString()} ${VERTICAL} listings stored` : '';
+    + ` &nbsp;·&nbsp; ${(d.total_stored || 0).toLocaleString()} ${VERTICAL} listings tracked · live` : '';
 
   $('stHint').innerHTML = priceLabel === '$/round'
     ? 'Ammo stats use cost-per-round (price ÷ round count). Only loaded ammunition counts; guns, components and reloading supplies are excluded. Click a row to drill in.'
@@ -277,8 +294,8 @@ function renderStats() {
     $('stTbl').style.display = 'none';
     $('stEmpty').style.display = '';
     $('stEmpty').innerHTML = d.total_stored
-      ? 'No stored listings match these filters.'
-      : `No stored ${VERTICAL} listings yet — run a few <a href="${VERTICAL === 'guns' ? '/' : '/' + VERTICAL}">searches</a> first; every result is stored and feeds these stats.`;
+      ? 'No tracked listings match these filters.'
+      : `No ${VERTICAL} stats yet — run a few <a href="${VERTICAL === 'guns' ? '/' : '/' + VERTICAL}">searches</a>; every result feeds these stats live, and the aggregates persist between sessions.`;
     return;
   }
   $('stEmpty').style.display = 'none';

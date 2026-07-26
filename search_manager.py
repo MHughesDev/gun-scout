@@ -1,12 +1,17 @@
-"""Runs one thread per site client and streams results into SQLite.
+"""Runs one thread per site client and streams results into process memory.
 
 Vertical-aware: clients live in REGISTRIES[vertical]; a search uses the registry
 for criteria.vertical. Health checks sweep every vertical's clients.
+
+Every emitted listing takes two hops: statstore.ENGINE.observe() folds it into
+the live market stats (the only thing persisted), then store.record_listing()
+appends it to the in-RAM search the UI is polling.
 """
 import logging
 import threading
 
-import db
+import statstore
+import store
 from clients import REGISTRIES, ClientBlocked, StructureError
 from models import SearchCriteria
 
@@ -38,7 +43,7 @@ def start_search(criteria: SearchCriteria) -> int:
     sites = [s for s in (criteria.sites or reg.keys()) if s in reg]
     if not sites:
         sites = list(reg.keys())
-    search_id = db.create_search(criteria.to_dict(), sites)
+    search_id = store.create_search(criteria.to_dict(), sites)
     for site in sites:
         t = threading.Thread(
             target=_run_client, args=(search_id, site, criteria), daemon=True,
@@ -50,25 +55,26 @@ def start_search(criteria: SearchCriteria) -> int:
 
 def _run_client(search_id: int, site: str, criteria: SearchCriteria):
     client = _registry(criteria.vertical)[site]()
-    db.set_client_status(search_id, site, "running")
+    store.set_client_status(search_id, site, "running")
 
     def emit(listing):
-        db.record_listing(search_id, listing)
+        is_new = statstore.ENGINE.observe(listing)   # live stats move here
+        store.record_listing(search_id, listing, is_new)
 
     try:
         client.search(criteria, emit)
-        db.set_client_status(search_id, site, "done")
+        store.set_client_status(search_id, site, "done")
     except ClientBlocked as e:
-        db.set_client_status(search_id, site, "blocked", str(e))
+        store.set_client_status(search_id, site, "blocked", str(e))
     except StructureError as e:
         log.warning("STRUCTURE CHANGE detected for %s: %s", site, e)
-        db.set_client_status(search_id, site, "schema", str(e))
-        db.log_health(site, "schema_changed", str(e), 0, 0, criteria.vertical)
+        store.set_client_status(search_id, site, "schema", str(e))
+        store.log_health(site, "schema_changed", str(e), 0, 0, criteria.vertical)
     except Exception as e:
         log.exception("client %s failed", site)
-        db.set_client_status(search_id, site, "error", f"{type(e).__name__}: {e}")
+        store.set_client_status(search_id, site, "error", f"{type(e).__name__}: {e}")
     finally:
-        db.finish_search_if_done(search_id)
+        store.finish_search_if_done(search_id)
 
 
 def run_health_checks(sites: list[str] | None = None) -> list[dict]:
@@ -98,8 +104,8 @@ def run_health_checks(sites: list[str] | None = None) -> list[dict]:
                                   "found": 0, "elapsed_ms": 60000}
         if r["status"] != "ok":
             log.warning("health check %s: %s — %s", site, r["status"], r["message"])
-        db.log_health(site, r["status"], r["message"], r["found"], r["elapsed_ms"],
-                      everything[site][0])
+        store.log_health(site, r["status"], r["message"], r["found"], r["elapsed_ms"],
+                         everything[site][0])
         r["label"] = everything[site][1].label
         r["vertical"] = everything[site][0]
         out.append(r)

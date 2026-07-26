@@ -176,7 +176,7 @@ def enrich(listing) -> None:
         cm = case_material(t)
         if cm:
             attrs["case_material"] = cm
-    # cost-per-round: db._cpr also computes this, but set it here when possible
+    # cost-per-round: statstore._cpr also computes this, but set it here when possible
     # so the runtime Listing (used by sorting/filters pre-store) has it too
     rc = attrs.get("round_count")
     if listing.price and rc and not attrs.get("price_per_round"):

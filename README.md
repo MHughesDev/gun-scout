@@ -2,7 +2,9 @@
 
 Local web app that searches gun marketplaces from one place. Set filters, hit
 **Search**, and watch the table populate live as each site client reports in.
-Everything runs on your machine; results are stored in SQLite (`gun_scout.db`).
+Everything runs on your machine. Search results live in process memory only;
+the sole thing persisted (`gun_scout.db`) is the anonymous market-stats fact
+store.
 
 ## Run it
 
@@ -13,6 +15,39 @@ run.bat
 (or `pip install -r requirements.txt && python app.py`) then open
 http://127.0.0.1:8777.
 
+## Host it publicly (free tier friendly)
+
+The app is built to be shared: state is either global-by-design (stats, site
+tokens) or per-visitor and transient (searches).
+
+### Render (the configured path)
+
+`render.yaml` is a ready Blueprint. One-time setup: push to GitHub, then in
+the Render dashboard **New → Blueprint**, pick this repo, Apply. From then on
+**every push to the default branch auto-deploys**. Optionally front it with
+Cloudflare (free) for your domain/TLS/caching. Free-plan trade-offs: the app
+sleeps after 15 min idle (first visit takes ~30 s to wake) and has no
+persistent disk, so stats reset on each deploy — the upgrade path to
+always-on + durable stats (~$7/mo) is commented in `render.yaml`.
+
+### Any other host
+
+To deploy anywhere else (Railway / Fly / a VPS):
+
+- Start command: `python app.py`. When the host injects a `PORT` env var the
+  app binds `0.0.0.0:$PORT` and serves through waitress automatically.
+  **Run one process/worker** — the stats engine lives in process memory.
+- Point `GUN_SCOUT_DB` at a persistent volume (e.g. `/data/gun_scout.db`) so
+  the stats fact store survives redeploys; it's the only file that matters.
+- Keys are server-side and shared by every visitor: set `GUNBROKER_DEV_KEY`
+  for GunBroker, and `CABELAS_COVEO_TOKEN` for Cabela's (the browser-based
+  token minter can't run on a headless host, so paste a token minted locally;
+  it lasts ~4 h — re-set it or run the minter on a box that can reach the
+  deploy's `cabelas_token.json` volume).
+- Search history never reaches the server (it lives in each visitor's browser
+  sessionStorage, inputs only), and results evaporate from RAM ~15 minutes
+  after a search finishes — there's nothing user-identifying to store or leak.
+
 ## Filters
 
 Keyword/model, new/used/both, listing type (fixed price vs auction), action
@@ -20,22 +55,33 @@ type, manufacturer, caliber, barrel length range, price range, capacity range,
 an accessory filter (hides magazines/holsters/parts, on by default), and which
 sites to hit. For auctions the price range applies to the current bid.
 
-## Data model (built for price analytics)
+## Data model (streaming stats, no stored listings)
 
-- **One row per unique listing URL** (`listings`), with lifecycle tracking:
-  `first_seen_at` / `last_seen_at` give days-on-market; a listing that stops
-  being re-seen probably sold.
-- **`price_observations`** is a per-listing time series; a row is added only
-  when the observed price/bid actually changed, so watch-mode re-runs don't
-  bloat it. `search_results` records which search surfaced which listing.
-- **Firm prices and bids never mix**: `price` is only ever an asking/buy-now
-  price; a live auction's current bid sits in `current_bid` (it's a lower
-  bound, not a price). When an auction ends, a background poller re-fetches
-  the item and records the **final hammer price** (`final_price`) — the only
-  true market-clearing price in the data.
-- Segmentation columns for future stats: `condition_grade`
-  (new/excellent/very-good/good/…), `trade_in` (LE trade-ins are their own
-  price tier), `is_bundle` (gun + optic/mags packages skew price), `upc`.
+- **Searches, results, client status and health are RAM-only** (`store.py`).
+  The UI polls results in while a search runs; finished searches evaporate
+  after ~15 minutes. Nothing about what you searched for is ever written to
+  disk server-side — the "recent searches" list is your browser's
+  sessionStorage, holds input values only, and just prefills the form.
+- **The only persistent data is the stats fact store** (`statstore.py`).
+  Every listing a search observes is reduced to a compact anonymous *fact* —
+  just the dimension values stats group and filter by (brand, model, caliber,
+  action, gun type, condition, grain, bullet type, part category, fitment,
+  site, …) plus one price basis per engine (firm price for guns/parts,
+  cost-per-round for ammo). No URLs, titles, images or price history are
+  stored; facts are keyed by a 64-bit URL hash purely so re-observations
+  update in place instead of double counting.
+- **Stats update live, as searches happen**: `observe()` is an O(1) in-memory
+  upsert on the search threads' hot path; every mutation bumps a version
+  counter; the stats API computes from the RAM fact set and memoizes per
+  (query, version); a write-behind flusher batches dirty facts to SQLite
+  every ~2 s. The stats page polls and re-renders only when the version moves.
+- **Firm prices and bids never mix**: a live auction's current bid is a lower
+  bound, not a price, so it never enters price stats. When a GunBroker
+  auction ends, a background poller re-fetches the item and folds the **final
+  hammer price** — the only true market-clearing price — into its fact.
+- Price-stat hygiene flags ride on each fact: `trade_in` (LE trade-ins are
+  their own price tier) and `is_bundle` (gun + optic/mags packages skew
+  price, excluded from price stats by default).
 
 ## Site clients
 
@@ -63,8 +109,8 @@ Scrapers rot when sites redesign. Gun Scout tells you *when and where*:
   every site in parallel and reports per site: `ok` (with hit count and
   latency), `degraded` (parses but 0 hits or mostly-missing prices/titles —
   the drift wasn't loud enough to crash the parser), `schema_changed`,
-  `blocked`, or `error`. Results persist to the `health_log` table, and the
-  last known state is shown on page load.
+  `blocked`, or `error`. The latest result per site is kept in memory and
+  shown on page load (for the current server session).
 - API: `POST /api/health` runs the checks, `GET /api/health` returns the last
   result per site.
 
@@ -86,10 +132,12 @@ The UI and health system pick it up automatically. Conventions:
 
 ## Notes
 
-- A **NEW** badge marks listings never seen in any previous search
-  (suppressed on your very first search).
-- Search history, listings, price history, and health checks live in
-  `gun_scout.db`.
+- A **NEW** badge marks listings the stats engine has never seen before
+  (suppressed on a fresh install's first search).
+- Only the market-stats facts persist (in `gun_scout.db`); searches, results
+  and health checks live in process memory. A pre-existing multi-table
+  `gun_scout.db` is migrated automatically on first start: every stored
+  listing becomes a stat fact, then the legacy tables are dropped.
 - Auction search currently needs the GunBroker API key (GunsAmerica's
   server-rendered results only carry fixed-price dealer listings).
 - Clients sleep ~0.8 s between page fetches; keep it polite.

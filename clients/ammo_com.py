@@ -4,7 +4,7 @@ Proven live 2026-07: index `prod_ammonet_products` answers a plain POST to
 algolia.net (no Cloudflare, non-expiring search key) with structured caliber /
 jacket_type / in_stock / price and titles we parse for grain + round count
 ('Winchester 9mm Ammo - 50 Rounds of 147 Grain FMJ'). Cost-per-round (the Ammo
-engine's headline sort) = price / round_count, computed in enrichment / db.
+engine's headline sort) = price / round_count, computed in enrichment / statstore.
 
 All acquisition logic lives in clients/algolia.py; this file is just the site's
 credentials + the hit -> Listing field mapping.

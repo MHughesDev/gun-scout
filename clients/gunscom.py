@@ -215,7 +215,7 @@ class GunsComClient(SiteClient):
         '3006 SPRI', '30-06 SPRING'...); collect every spelling that resolves
         to the same canonical caliber as the request."""
         from . import calibers
-        from .base import _norm_cal
+        from .calibers import _norm as _norm_cal
         values = self._facet_values("product.specs.Caliber", query_text, filters)
         want_canon = calibers.canonical(wanted)
         out = []

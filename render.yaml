@@ -1,0 +1,36 @@
+# Render Blueprint — one-time setup: dashboard.render.com > New > Blueprint,
+# pick this repo, Apply. After that every push to the default branch
+# auto-deploys (build + restart, ~2 min).
+#
+# The app self-configures for cloud: Render injects PORT, so app.py binds
+# 0.0.0.0 and serves through waitress with a single process — which is
+# required, because the stats engine lives in process memory.
+services:
+  - type: web
+    name: gun-scout
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python app.py
+    healthCheckPath: /api/verticals
+    autoDeploy: true
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.13.4
+      # Shared server-side keys — every visitor uses them. Set values in the
+      # Render dashboard (both optional; the affected client just reports
+      # itself blocked until its key exists).
+      - key: GUNBROKER_DEV_KEY   # free key: gunbroker.com > Help > API
+        sync: false
+      - key: CABELAS_COVEO_TOKEN # mint locally (python cabelas_token.py), paste; ~4 h lifetime
+        sync: false
+    # ---- upgrading to always-on + durable stats (paid Starter plan) ----
+    # The free plan sleeps after 15 min idle and has no persistent disk, so
+    # the stats DB resets on each deploy/restart. To keep stats forever:
+    #   1. switch plan: free -> starter
+    #   2. uncomment the disk below
+    #   3. add env var GUN_SCOUT_DB=/data/gun_scout.db
+    # disk:
+    #   name: stats
+    #   mountPath: /data
+    #   sizeGB: 1

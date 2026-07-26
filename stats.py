@@ -1,20 +1,25 @@
-"""Aggregate statistics over stored listings, per vertical.
+"""Live aggregate statistics over the in-memory fact set, per vertical.
 
-Guns: median price by caliber/manufacturer/action/… over kind='firearm'.
+Guns: price stats by caliber/manufacturer/action/… over facts with rel=1.
 Ammo: the price basis is COST PER ROUND, grouped by caliber/bullet/brand/grain.
 Parts: price by category/fitment/brand.
 
-The vertical descriptor supplies the relevance kind, the price column, the
-default grouping, and the quality fields; the grouper functions live here.
-Bundles (gun + optic packages) are excluded from PRICE stats by default. Open
-auctions (only a current bid) count toward listing counts but never price stats.
+Queries run against statstore.ENGINE's RAM fact set — never the disk — and are
+memoized per (query, engine version), so a stats page polling while a search
+is running sees the numbers move with every batch of results, and idle polling
+is effectively free. Bundles (gun + optic packages) are excluded from PRICE
+stats by default; open auctions (only a current bid) count toward listing
+counts but never price stats (their fact price arrives when the close poller
+records the hammer price).
 """
+import time
 from collections import defaultdict
 
-import db
+import statstore
 from clients import calibers, titleparse
 
-# ---- shared grouping helpers ---------------------------------------------
+# ---- bucketed groupers (buckets applied at query time, so they can evolve
+# without invalidating stored facts) ----------------------------------------
 _CAP_BUCKETS = ((1, 5, "1–5"), (6, 10, "6–10"), (11, 15, "11–15"),
                 (16, 20, "16–20"), (21, 30, "21–30"), (31, 999, "31+"))
 _BBL_BUCKETS = ((0, 4, "under 4\""), (4, 6, "4–6\""), (6, 10, "6–10\""),
@@ -26,19 +31,6 @@ _GRAIN_BUCKETS = ((1, 40, "≤40 gr"), (41, 60, "41–60 gr"), (61, 90, "61–90
 _ROUND_BUCKETS = ((1, 20, "1–20"), (21, 50, "21–50"), (51, 200, "51–200"),
                   (201, 600, "201–600"), (601, 99999, "600+"))
 
-_MFR_CANON_CACHE: dict[str, str] = {}
-
-
-def _canon_mfr(raw: str) -> str:
-    s = (raw or "").strip()
-    if not s:
-        return ""
-    hit = _MFR_CANON_CACHE.get(s)
-    if hit is None:
-        hit = titleparse.manufacturer(s) or s.title()
-        _MFR_CANON_CACHE[s] = hit
-    return hit
-
 
 def _bucket(v, buckets):
     if v is None:
@@ -49,41 +41,47 @@ def _bucket(v, buckets):
     return ""
 
 
-# group_by name -> function(sqlite row) -> group key ('' -> "(unknown)")
+# group_by name -> function(fact dict) -> group key ('' -> "(unknown)")
 _GROUPERS_BY_VERTICAL = {
     "guns": {
-        "caliber": lambda r: r["caliber_canon"],
-        "manufacturer": lambda r: _canon_mfr(r["manufacturer"]),
-        "model": lambda r: f"{_canon_mfr(r['manufacturer'])} {r['model']}".strip()
-                           if r["model"] else "",
-        "action": lambda r: r["action"],
-        "gun_type": lambda r: r["gun_type"],
-        "site": lambda r: r["site"],
-        "condition": lambda r: r["condition"],
-        "condition_grade": lambda r: r["condition_grade"],
-        "listing_type": lambda r: r["listing_type"],
-        "capacity": lambda r: _bucket(r["capacity_rounds"], _CAP_BUCKETS),
-        "barrel": lambda r: _bucket(r["barrel_length"], _BBL_BUCKETS),
+        "caliber": lambda f: f.get("cal", ""),
+        "manufacturer": lambda f: f.get("mfr", ""),
+        "model": lambda f: f"{f.get('mfr', '')} {f['model']}".strip()
+                           if f.get("model") else "",
+        "action": lambda f: f.get("act", ""),
+        "gun_type": lambda f: f.get("gt", ""),
+        "site": lambda f: f.get("site", ""),
+        "condition": lambda f: f.get("cond", ""),
+        "condition_grade": lambda f: f.get("grade", ""),
+        "listing_type": lambda f: f.get("ltype", ""),
+        "capacity": lambda f: _bucket(f.get("cap"), _CAP_BUCKETS),
+        "barrel": lambda f: _bucket(f.get("bbl"), _BBL_BUCKETS),
     },
     "ammo": {
-        "caliber": lambda r: r["caliber_canon"],
-        "manufacturer": lambda r: _canon_mfr(r["manufacturer"]),
-        "bullet_type": lambda r: r["bullet_type"],
-        "grain": lambda r: _bucket(r["grain"], _GRAIN_BUCKETS),
-        "case_material": lambda r: r["case_material"],
-        "round_count": lambda r: _bucket(r["round_count"], _ROUND_BUCKETS),
-        "condition": lambda r: r["condition"],
-        "site": lambda r: r["site"],
+        "caliber": lambda f: f.get("cal", ""),
+        "manufacturer": lambda f: f.get("mfr", ""),
+        "bullet_type": lambda f: f.get("bt", ""),
+        "grain": lambda f: _bucket(f.get("grain"), _GRAIN_BUCKETS),
+        "case_material": lambda f: f.get("case", ""),
+        "round_count": lambda f: _bucket(f.get("rc"), _ROUND_BUCKETS),
+        "condition": lambda f: f.get("cond", ""),
+        "site": lambda f: f.get("site", ""),
     },
     "parts": {
-        "part_category": lambda r: r["part_category"],
-        "fitment": lambda r: r["fitment_canon"],
-        "manufacturer": lambda r: _canon_mfr(r["manufacturer"]),
-        "caliber": lambda r: r["caliber_canon"],
-        "condition": lambda r: r["condition"],
-        "site": lambda r: r["site"],
+        "part_category": lambda f: f.get("pcat", ""),
+        "fitment": lambda f: f.get("fit", ""),
+        "manufacturer": lambda f: f.get("mfr", ""),
+        "caliber": lambda f: f.get("cal", ""),
+        "condition": lambda f: f.get("cond", ""),
+        "site": lambda f: f.get("site", ""),
     },
 }
+
+# vertical quality-field column name (verticals/*.py) -> fact key
+_QUALITY_KEY = {"caliber_canon": "cal", "manufacturer": "mfr", "action": "act",
+                "gun_type": "gt", "model": "model", "capacity_rounds": "cap",
+                "grain": "grain", "bullet_type": "bt", "round_count": "rc",
+                "part_category": "pcat", "fitment_canon": "fit"}
 
 
 def _pct(sorted_vals: list, q: float):
@@ -97,10 +95,6 @@ def _pct(sorted_vals: list, q: float):
     if lo + 1 >= len(sorted_vals):
         return sorted_vals[-1]
     return sorted_vals[lo] * (1 - frac) + sorted_vals[lo + 1] * frac
-
-
-def _r(v):
-    return None if v is None else round(v, 2)
 
 
 def _rp(v):
@@ -125,31 +119,30 @@ def _price_summary(prices: list) -> dict:
     }
 
 
-_SELECT = """SELECT site, manufacturer, model, caliber_canon, action,
-                    gun_type, condition, condition_grade, trade_in,
-                    is_bundle, listing_type, price, final_price,
-                    capacity_rounds, barrel_length,
-                    grain, bullet_type, round_count, price_per_round,
-                    case_material, part_category, fitment_canon
-             FROM listings WHERE vertical=? AND kind=?"""
-
-
-def _price_of(r, price_col: str):
-    if price_col == "price_per_round":
-        v = r["price_per_round"]
-        return v if (v is not None and v > 0) else None
-    v = r["price"] if r["price"] is not None else r["final_price"]
-    if v is not None and v <= 0:
-        v = None    # 'call for price' listings come through as $0
-    return v
+# (query args, engine version) -> result. Cleared wholesale when it grows —
+# entries die naturally anyway the moment the version bumps.
+_cache: dict[tuple, dict] = {}
+_CACHE_MAX = 64
 
 
 def compute(args) -> dict:
+    version = statstore.ENGINE.version
+    key = (version, tuple(sorted((k, str(v)) for k, v in args.items())))
+    hit = _cache.get(key)
+    if hit is not None:
+        return hit
+    result = _compute(args, version)
+    if len(_cache) >= _CACHE_MAX:
+        _cache.clear()
+    _cache[key] = result
+    return result
+
+
+def _compute(args, version: int) -> dict:
     from verticals import get as get_vertical
     vertical = (args.get("vertical") or "guns").strip().lower()
     vert = get_vertical(vertical)
     groupers = _GROUPERS_BY_VERTICAL.get(vert.id, _GROUPERS_BY_VERTICAL["guns"])
-    price_col = vert.stats_price_col
 
     group_by = (args.get("group_by") or vert.stats_default_group).strip()
     if group_by not in groupers:
@@ -158,7 +151,7 @@ def compute(args) -> dict:
     grouper = groupers[group_by]
 
     want_caliber = calibers.canonical(args.get("caliber") or "")
-    want_mfr = _canon_mfr(args.get("manufacturer") or "")
+    want_mfr = statstore.canon_mfr(args.get("manufacturer") or "")
     want_action = titleparse.normalize_action(args.get("action") or "")
     want_type = (args.get("gun_type") or "").strip().lower()
     want_cond = (args.get("condition") or "").strip().lower()
@@ -172,49 +165,49 @@ def compute(args) -> dict:
     exclude_tradeins = args.get("exclude_tradeins") in ("1", "true", "yes")
     limit = int(args.get("limit") or 40)
 
-    with db.connect() as conn:
-        rows = conn.execute(_SELECT, (vert.id, vert.relevance_kind)).fetchall()
+    facts = [f for f in statstore.ENGINE.facts(vert.id) if f.get("rel")]
+    total = len(facts)
 
-    total = len(rows)
     kept = []
-    n_bundles_dropped = 0
-    for r in rows:
-        if want_caliber and r["caliber_canon"] != want_caliber:
+    for f in facts:
+        if want_caliber and f.get("cal") != want_caliber:
             continue
-        if want_mfr and _canon_mfr(r["manufacturer"]) != want_mfr:
+        if want_mfr and f.get("mfr") != want_mfr:
             continue
-        if want_action and r["action"] != want_action:
+        if want_action and f.get("act") != want_action:
             continue
-        if want_type and r["gun_type"] != want_type:
+        if want_type and f.get("gt") != want_type:
             continue
-        if want_cond in ("new", "used", "reman", "surplus") and r["condition"] != want_cond:
+        if want_cond in ("new", "used", "reman", "surplus") and f.get("cond") != want_cond:
             continue
-        if want_cat and r["part_category"] != want_cat:
+        if want_cat and f.get("pcat") != want_cat:
             continue
-        if want_fit and r["fitment_canon"] != want_fit:
+        if want_fit and f.get("fit") != want_fit:
             continue
-        if want_bullet and (r["bullet_type"] or "").lower() != want_bullet.lower():
+        if want_bullet and (f.get("bt") or "").lower() != want_bullet.lower():
             continue
-        if want_sites and r["site"] not in want_sites:
+        if want_sites and f.get("site") not in want_sites:
             continue
-        if exclude_tradeins and r["trade_in"]:
+        if exclude_tradeins and f.get("ti"):
             continue
-        price = _price_of(r, price_col)
+        price = f.get("price")
         if price_min is not None and (price is None or price < price_min):
             continue
         if price_max is not None and (price is None or price > price_max):
             continue
-        kept.append((r, price))
+        kept.append((f, price))
 
     groups: dict[str, dict] = defaultdict(lambda: {"count": 0, "prices": []})
-    for r, price in kept:
-        key = grouper(r) or "(unknown)"
+    n_bundles_dropped = 0
+    for f, price in kept:
+        key = grouper(f) or "(unknown)"
         g = groups[key]
         g["count"] += 1
-        if price is not None and not (r["is_bundle"] and not include_bundles):
-            g["prices"].append(price)
-        if r["is_bundle"] and not include_bundles and price is not None:
-            n_bundles_dropped += 1
+        if price is not None:
+            if f.get("bun") and not include_bundles:
+                n_bundles_dropped += 1
+            else:
+                g["prices"].append(price)
 
     n = len(kept)
     out_groups = []
@@ -228,13 +221,15 @@ def compute(args) -> dict:
     truncated = max(0, len(out_groups) - limit)
     out_groups = out_groups[:limit]
 
-    all_prices = [p for r, p in kept
-                  if p is not None and not (r["is_bundle"] and not include_bundles)]
+    all_prices = [p for f, p in kept
+                  if p is not None and not (f.get("bun") and not include_bundles)]
     quality = {}
     if n:
         for col, _label in vert.stats_quality_fields:
+            fk = _QUALITY_KEY.get(col, col)
             quality[col + "_known_pct"] = round(
-                100.0 * sum(1 for r, _ in kept if r[col] not in (None, "", 0)) / n, 1)
+                100.0 * sum(1 for f, _ in kept
+                            if f.get(fk) not in (None, "", 0)) / n, 1)
 
     return {
         "vertical": vert.id,
@@ -249,6 +244,8 @@ def compute(args) -> dict:
         "truncated_groups": truncated,
         "quality": quality,
         "quality_labels": {c + "_known_pct": l for c, l in vert.stats_quality_fields},
+        "version": version,
+        "as_of": time.time(),
     }
 
 
