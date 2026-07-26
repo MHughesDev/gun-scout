@@ -343,6 +343,7 @@ async function runSearch() {
   $('empty').style.display = ''; $('tbl').style.display = 'none';
   $('messages').innerHTML = '';
   $('searchBtn').disabled = true;
+  if (isNarrow()) collapseFilters(true);
   const r = await fetch(`/api/${VERTICAL}/search`, {
     method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(c),
   });
@@ -576,6 +577,21 @@ function loadNav() {
   $('appNav').innerHTML = '<a href="/" class="active">Search</a>'
     + '<a href="/stats">Stats</a><a href="/ballistics">Ballistics</a>';
 }
+
+/* ---------------- mobile filter drawer ----------------
+   Below 760px the filter rail stacks above the results, which would bury them
+   a full screen down — so it collapses on search and the header button reopens it. */
+const isNarrow = () => window.matchMedia('(max-width: 760px)').matches;
+function syncFiltersToggle() {
+  $('filtersToggle').textContent =
+    document.body.classList.contains('filters-collapsed') ? 'Filters ▾' : 'Filters ▴';
+}
+function collapseFilters(on) {
+  document.body.classList.toggle('filters-collapsed', on);
+  syncFiltersToggle();
+}
+$('filtersToggle').onclick = () =>
+  collapseFilters(!document.body.classList.contains('filters-collapsed'));
 function buildVertPicker() {
   $('vertPicker').innerHTML = VERTICALS.map(v =>
     `<button data-v="${esc(v.id)}"${v.id === VERTICAL ? ' class="active"' : ''}>${esc(v.label)}</button>`
