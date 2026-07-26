@@ -399,9 +399,11 @@ function renderStatus(clients, overall) {
     if (hiddenSites.has(s)) hiddenSites.delete(s); else hiddenSites.add(s);
     renderStatus(lastClients, lastStatus); renderRows();
   });
-  // raw scraper diagnostics (HTTP codes, tracebacks) are operator info —
-  // the hosted app shows only the per-site status pills
-  $('messages').innerHTML = PUBLIC ? '' : clients.filter(c => c.message)
+  // raw scraper diagnostics (HTTP codes, tracebacks) are operator info — the
+  // hosted app shows only the pills, plus 'unavailable', whose message is
+  // plain English a visitor should actually see
+  $('messages').innerHTML = clients
+    .filter(c => c.message && (!PUBLIC || c.status === 'unavailable'))
     .map(c => `<div class="msg">⚠ ${SITE_LABELS[c.site] || c.site}: ${esc(c.message)}</div>`).join('');
 }
 

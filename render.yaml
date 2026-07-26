@@ -23,6 +23,19 @@ services:
       # visitors' browsers refresh it automatically when it ages.)
       - key: GUNBROKER_DEV_KEY   # free key: gunbroker.com > Help > API
         sync: false
+      # Shared secret for the local worker (worker.py) that scrapes from the
+      # operator's home connection. REQUIRED for the worker protocol: without
+      # it a public deployment refuses worker connections outright rather than
+      # letting anyone claim jobs or inject listings. Set the same value here
+      # and in the worker's environment.
+      - key: GS_WORKER_KEY
+        sync: false
+      # Which sites the worker handles. '*' (the default when hosted) sends
+      # every site to it; narrow to a comma-separated list — e.g.
+      # "sportsmans,gundeals,gunmade,psa" — to keep the big search-API sources
+      # (guns.com, Cabela's) scraping in the cloud and off your home data.
+      - key: GS_REMOTE_SITES
+        value: "*"
     # ---- upgrading to always-on + durable stats (paid Starter plan) ----
     # The free plan sleeps after 15 min idle and has no persistent disk, so
     # the stats DB resets on each deploy/restart. To keep stats forever:

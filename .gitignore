@@ -21,3 +21,7 @@ cabelas_minter/mint_*.txt
 # Runtime logs
 *.log
 server.err.log
+
+# Local worker egress audit log
+worker_egress.log
+worker_egress.log.1

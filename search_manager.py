@@ -8,14 +8,45 @@ the live market stats (the only thing persisted), then store.record_listing()
 appends it to the in-RAM search the UI is polling.
 """
 import logging
+import os
 import threading
 
+import remote
 import statstore
 import store
 from clients import REGISTRIES, ClientBlocked, StructureError
 from models import SearchCriteria
 
 log = logging.getLogger("gun_scout")
+
+
+def _all_site_names() -> set[str]:
+    return {name for reg in REGISTRIES.values() for name in reg}
+
+
+def remote_sites() -> set[str]:
+    """Sites whose scraping is delegated to the operator's local worker.
+
+    GS_REMOTE_SITES: comma-separated names, or '*' for every site. Unset means
+    'everything when hosted, nothing locally' — a hosted instance can't reach
+    the Cloudflare-fronted retailers from a datacenter IP, while a local run
+    is already on the connection that works.
+    """
+    raw = os.environ.get("GS_REMOTE_SITES")
+    if raw is None:
+        raw = "*" if (os.environ.get("GS_PUBLIC") or os.environ.get("PORT")) else ""
+    raw = raw.strip()
+    if raw == "*":
+        return _all_site_names()
+    return {s.strip() for s in raw.split(",") if s.strip()}
+
+
+def ingest(search_id: int, listing) -> bool:
+    """Fold one listing into the live stats and the polling search.
+    The single path for results, whether a local thread or the remote worker
+    produced them."""
+    is_new = statstore.ENGINE.observe(listing)
+    return store.record_listing(search_id, listing, is_new)
 
 
 def _registry(vertical: str) -> dict:
@@ -44,12 +75,24 @@ def start_search(criteria: SearchCriteria) -> int:
     if not sites:
         sites = list(reg.keys())
     search_id = store.create_search(criteria.to_dict(), sites)
+    # Delegate only while a worker is actually connected. With it offline we
+    # still scrape from here: the Cloudflare-fronted retailers will 403, but
+    # the search-API-backed sources (guns.com, Cabela's, GunsAmerica) work
+    # from anywhere — far better than the whole site going dark.
+    delegated = remote_sites() if remote.worker_online() else set()
     for site in sites:
+        if site in delegated:
+            # the operator's worker scrapes this one from its own connection
+            if remote.enqueue(search_id, site, criteria.to_dict()) is None:
+                store.set_client_status(search_id, site, "error",
+                                        "too many searches queued — try again shortly")
+            continue
         t = threading.Thread(
             target=_run_client, args=(search_id, site, criteria), daemon=True,
             name=f"search-{search_id}-{site}",
         )
         t.start()
+    store.finish_search_if_done(search_id)   # nothing to wait for at all
     return search_id
 
 
@@ -58,8 +101,7 @@ def _run_client(search_id: int, site: str, criteria: SearchCriteria):
     store.set_client_status(search_id, site, "running")
 
     def emit(listing):
-        is_new = statstore.ENGINE.observe(listing)   # live stats move here
-        store.record_listing(search_id, listing, is_new)
+        ingest(search_id, listing)   # live stats move here
 
     try:
         client.search(criteria, emit)

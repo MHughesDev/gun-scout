@@ -22,18 +22,24 @@ from flask import Flask, jsonify, request, send_from_directory
 
 import cabelas_token
 import close_poller
+import remote
 import search_manager
 import statstore
 import stats as stats_mod
 import store
 import verticals
-from models import SearchCriteria
+from models import Listing, SearchCriteria
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
 
 app = Flask(__name__, static_folder="static", static_url_path="")
 statstore.start()  # load facts, migrate any legacy db, start write-behind flusher
 close_poller.start()  # records final hammer prices of ended auctions (idles without an API key)
+remote.start()  # releases queued jobs when the operator's worker is offline
+
+# Cap request bodies: the worker posts result batches, and nothing else this
+# app accepts is large. Keeps a hostile POST from ballooning memory.
+app.config["MAX_CONTENT_LENGTH"] = 24 * 1024 * 1024
 
 # Public/hosted mode (a host injected PORT, or GS_PUBLIC=1): ops UI — the site
 # health checker and raw client error text — is for the operator running
@@ -134,6 +140,94 @@ def vertical_stats(vertical):
     args = request.args.to_dict()
     args["vertical"] = vertical
     return jsonify(stats_mod.compute(args))
+
+
+# ---- local worker protocol ------------------------------------------------
+# The operator's machine claims search jobs, runs the real clients on its own
+# connection, and posts listings back. It is handed CRITERIA, never URLs —
+# see remote.py and guard.py for why that boundary matters.
+
+_LISTING_FIELDS = set(Listing.__dataclass_fields__)
+MAX_LISTINGS_PER_POST = 500
+
+
+def _worker_auth():
+    """(ok, error_response). Fails closed: a public deployment with no key
+    configured refuses the worker protocol outright rather than letting
+    anyone claim jobs or inject listings into the shared stats."""
+    key = os.environ.get("GS_WORKER_KEY", "")
+    if not key:
+        if PUBLIC:
+            return False, (jsonify({"error": "worker protocol disabled: "
+                                             "GS_WORKER_KEY is not set"}), 503)
+        return True, None       # local dev: no key needed
+    if not hmac.compare_digest(request.headers.get("X-Worker-Key", ""), key):
+        return False, (jsonify({"error": "bad or missing worker key"}), 403)
+    return True, None
+
+
+@app.post("/api/worker/claim")
+def worker_claim():
+    ok, err = _worker_auth()
+    if not ok:
+        return err
+    payload = request.get_json(force=True, silent=True) or {}
+    worker_id = str(payload.get("worker_id") or "worker")[:64]
+    sites = [str(s)[:40] for s in (payload.get("sites") or [])][:40]
+    jobs = remote.claim(worker_id, sites)
+    return jsonify({"jobs": jobs, "poll_after_s": 0 if jobs else 3})
+
+
+@app.post("/api/worker/results")
+def worker_results():
+    ok, err = _worker_auth()
+    if not ok:
+        return err
+    payload = request.get_json(force=True, silent=True) or {}
+    job = remote.get(int(payload.get("job_id") or 0))
+    if job is None or job["status"] != "claimed":
+        return jsonify({"error": "unknown or already-finished job"}), 404
+    raw = payload.get("listings") or []
+    if not isinstance(raw, list):
+        return jsonify({"error": "listings must be a list"}), 400
+    accepted = 0
+    for d in raw[:MAX_LISTINGS_PER_POST]:
+        if not isinstance(d, dict):
+            continue
+        try:
+            # only known dataclass fields — never **d blindly
+            listing = Listing(**{k: v for k, v in d.items() if k in _LISTING_FIELDS})
+        except (TypeError, ValueError):
+            continue
+        if not listing.url or not listing.site:
+            continue
+        listing.site = job["site"]      # a job may only report its own site
+        if search_manager.ingest(job["search_id"], listing):
+            accepted += 1
+    remote.touch(job["id"])
+    return jsonify({"accepted": accepted})
+
+
+@app.post("/api/worker/complete")
+def worker_complete():
+    ok, err = _worker_auth()
+    if not ok:
+        return err
+    payload = request.get_json(force=True, silent=True) or {}
+    status = str(payload.get("status") or "done")[:20]
+    if status not in ("done", "error", "blocked", "schema", "unavailable"):
+        status = "done"
+    found = remote.complete(int(payload.get("job_id") or 0), status,
+                            str(payload.get("message") or "")[:400])
+    return jsonify({"ok": found})
+
+
+@app.get("/api/worker/status")
+def worker_status():
+    ok, err = _worker_auth()
+    if not ok:
+        return err
+    return jsonify(remote.status())
 
 
 # ---- shared Cabela's token (crowd-refreshed, stored in the app DB) -------

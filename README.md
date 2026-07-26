@@ -44,6 +44,55 @@ To deploy anywhere else (Railway / Fly / a VPS):
   and shared by all visitors; run `push_token.py` on a machine that can mint
   (see below) to keep it fresh.
 
+### The local worker (how the hosted site gets every source)
+
+Cloudflare judges datacenter IPs far more harshly than home connections, so
+several retailers 403 the hosted app while serving your own machine normally.
+Rather than disguising where requests come from, the scrapers run where they
+already work: `worker.py` on your machine claims search jobs from the
+deployment, runs the real clients, and posts the parsed listings back.
+
+```bash
+python worker.py
+```
+
+Set `GS_WORKER_KEY` to the same value on the deployment and on your machine
+(the hosted app refuses the worker protocol entirely without it). It also
+keeps the Cabela's token fresh, so `push_token.py` no longer needs its own
+schedule. Make it auto-start with Task Scheduler at logon, or NSSM for a
+proper Windows service.
+
+**Data note:** every page downloads through your connection, so a broad search
+is tens of MB (one guns.com Algolia query alone can return 3+ MB). Only the
+extracted listings go back up — roughly 1 MB for a large search, not the raw
+HTML. If it's too much, set `GS_REMOTE_SITES` to just the blocked four
+(`sportsmans,gundeals,gunmade,psa`) and let the search-API sources keep
+running in the cloud.
+
+**If the worker is offline** the site doesn't go dark: searches fall back to
+scraping from the cloud, so the API-backed sources still answer and only the
+Cloudflare-fronted ones report "unavailable".
+
+#### Security model
+
+The worker runs on a home connection on behalf of a public website, so
+`guard.py` wraps every request it makes. The governing rule is that **the
+server is the untrusted end** — it sends search *criteria*, never URLs, and
+every restriction is enforced inside the worker so a compromised server, a
+bug, or a leaked key cannot widen them:
+
+- **Host allowlist**, a constant in `guard.py`, not configuration. This is
+  what stops the worker from ever becoming an open proxy.
+- **Public-address requirement** — every resolved IP must be globally
+  routable, so nothing can reach your router, NAS, printers or anything else
+  on your LAN even if DNS points there.
+- **Redirects validated before they're followed**, so an allowed host can't
+  bounce the worker somewhere else.
+- **Size caps and a token-bucket rate limit** on requests and bytes, so no
+  amount of public traffic can turn your connection into a firehose.
+- **Outbound only** — no listening port, no port forwarding.
+- **Audit log** at `worker_egress.log`: every request, status and byte count.
+
 ### What does and doesn't work from a cloud host
 
 Cloudflare and Akamai judge datacenter IPs far more harshly than home
@@ -57,8 +106,8 @@ connections, so hosting changes which sources answer:
 | Cabela's | works **once a token is relayed** | Coveo answers from any IP; only the token needs a real browser |
 | Sportsman's, gun.deals, GunMade, PSA | blocked (403) | Cloudflare rejects the datacenter IP; a forged Chrome TLS fingerprint does not help |
 
-The blocked four still work when you run Gun Scout locally. Getting them in
-the cloud would require routing requests through a residential proxy.
+The blocked four work whenever the local worker above is running, and always
+work when you run Gun Scout locally.
 
 **Keeping Cabela's alive:** the Coveo token can only be minted by a real
 browser on a cabelas.com page, so the deployment can't mint its own. Run the
