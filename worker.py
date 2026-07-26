@@ -192,8 +192,24 @@ def main() -> int:
                     help="skip the Cabela's token refresher")
     args = ap.parse_args()
 
-    logging.basicConfig(level=logging.INFO,
-                        format="%(asctime)s %(levelname)s %(message)s")
+    # Log to a file as well as stdout: when Task Scheduler runs this under
+    # pythonw there is no console, and worker.log is the only way to see what
+    # happened. Capped and rotated so it can't grow unbounded.
+    fmt = logging.Formatter("%(asctime)s %(levelname)s %(message)s")
+    root = logging.getLogger()
+    root.setLevel(logging.INFO)
+    stream = logging.StreamHandler()
+    stream.setFormatter(fmt)
+    root.addHandler(stream)
+    try:
+        from logging.handlers import RotatingFileHandler
+        fh = RotatingFileHandler(
+            os.path.join(os.path.dirname(os.path.abspath(__file__)), "worker.log"),
+            maxBytes=2 * 1024 * 1024, backupCount=2, encoding="utf-8")
+        fh.setFormatter(fmt)
+        root.addHandler(fh)
+    except OSError:
+        pass    # read-only dir: console logging alone is fine
     key = os.environ.get("GS_WORKER_KEY", "")
     if not key:
         log.warning("GS_WORKER_KEY is not set — fine for a local test, but the "
