@@ -14,6 +14,7 @@ let VERTICAL = {'/': 'guns', '/parts': 'parts', '/ammo': 'ammo'}[location.pathna
 let VERTICALS = [];   // [{id,label,path}] from /api/verticals, for the picker
 
 let SCHEMA = null, COLUMNS = [], PRESETS = {};
+let PUBLIC = false;   // hosted mode: operator-only UI (health, raw errors) hidden
 let currentSearch = null, lastId = 0, rows = [], pollTimer = null;
 let sortKey = null, sortDir = 1;
 const SITE_LABELS = {};
@@ -425,7 +426,9 @@ function renderStatus(clients, overall) {
     if (hiddenSites.has(s)) hiddenSites.delete(s); else hiddenSites.add(s);
     renderStatus(lastClients, lastStatus); renderRows();
   });
-  $('messages').innerHTML = clients.filter(c => c.message)
+  // raw scraper diagnostics (HTTP codes, tracebacks) are operator info —
+  // the hosted app shows only the per-site status pills
+  $('messages').innerHTML = PUBLIC ? '' : clients.filter(c => c.message)
     .map(c => `<div class="msg">⚠ ${SITE_LABELS[c.site] || c.site}: ${esc(c.message)}</div>`).join('');
 }
 
@@ -657,7 +660,7 @@ async function loadVertical() {
   $('empty').innerHTML = 'Set your filters and hit <b>Search</b>.';
   renderRows();
   await loadSites();
-  fetch('/api/health').then(r => r.json()).then(renderHealth);
+  if (!PUBLIC) fetch('/api/health').then(r => r.json()).then(renderHealth);
   loadHistory();
   if (VERTICAL === 'guns') ensureCabelasToken();  // fire-and-forget on page load
 }
@@ -667,6 +670,9 @@ async function loadVertical() {
   loadNav();
   document.querySelectorAll('#viewToggle button')
     .forEach(b => b.onclick = () => setView(b.dataset.view));
+  try { PUBLIC = !!(await (await fetch('/api/config')).json()).public; }
+  catch (e) { /* default: dev mode */ }
+  if (PUBLIC) { $('healthBtn').style.display = 'none'; $('healthPanel').style.display = 'none'; }
   VERTICALS = await (await fetch('/api/verticals')).json();
   buildVertPicker();
   await loadVertical();

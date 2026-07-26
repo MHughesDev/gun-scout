@@ -34,6 +34,11 @@ app = Flask(__name__, static_folder="static", static_url_path="")
 statstore.start()  # load facts, migrate any legacy db, start write-behind flusher
 close_poller.start()  # records final hammer prices of ended auctions (idles without an API key)
 
+# Public/hosted mode (a host injected PORT, or GS_PUBLIC=1): ops UI — the site
+# health checker and raw client error text — is for the operator running
+# locally, not for visitors, so the API refuses it and the frontend hides it.
+PUBLIC = bool(os.environ.get("GS_PUBLIC") or os.environ.get("PORT"))
+
 
 def _vert_or_404(vertical: str):
     v = verticals.VERTICALS.get(vertical)
@@ -68,6 +73,13 @@ def ballistics():
 
 
 # ---- shared metadata -----------------------------------------------------
+
+@app.get("/api/config")
+def app_config():
+    """Frontend boot flags. `public` hides operator-only UI (health checks,
+    raw scraper error text) on the hosted deployment."""
+    return jsonify({"public": PUBLIC})
+
 
 @app.get("/api/verticals")
 def list_verticals():
@@ -147,11 +159,15 @@ def cabelas_token_push():
 
 @app.post("/api/health")
 def run_health():
+    if PUBLIC:  # canary scrapes are an operator tool, not a visitor feature
+        return jsonify({"error": "not available"}), 404
     return jsonify(search_manager.run_health_checks())
 
 
 @app.get("/api/health")
 def last_health():
+    if PUBLIC:
+        return jsonify({"error": "not available"}), 404
     return jsonify(store.latest_health())
 
 
