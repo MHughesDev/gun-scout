@@ -40,12 +40,38 @@ To deploy anywhere else (Railway / Fly / a VPS):
 - Point `GUN_SCOUT_DB` at a persistent volume (e.g. `/data/gun_scout.db`) so
   the stats fact store survives redeploys; it's the only file that matters.
 - Keys are server-side and shared by every visitor: set `GUNBROKER_DEV_KEY`
-  for GunBroker. Cabela's needs **no configuration at all**: its short-lived
-  Coveo token lives in the app DB, and when it ages, whichever visitor's
-  browser notices first silently mints a fresh one from Cabela's CORS-open
-  token endpoint and pushes it up. The server validates hard (pinned Coveo
-  org + live catalog probe) before accepting, so the shared slot can't be
-  poisoned.
+  for GunBroker. Cabela's uses a short-lived Coveo token kept in the app DB
+  and shared by all visitors; run `push_token.py` on a machine that can mint
+  (see below) to keep it fresh.
+
+### What does and doesn't work from a cloud host
+
+Cloudflare and Akamai judge datacenter IPs far more harshly than home
+connections, so hosting changes which sources answer:
+
+| Source | Hosted | Why |
+|--------|--------|-----|
+| Guns.com | works | queries Algolia, a separate host with no bot protection |
+| GunsAmerica | works | server-rendered HTML, no bot wall |
+| GunBroker | works with a key | official API |
+| Cabela's | works **once a token is relayed** | Coveo answers from any IP; only the token needs a real browser |
+| Sportsman's, gun.deals, GunMade, PSA | blocked (403) | Cloudflare rejects the datacenter IP; a forged Chrome TLS fingerprint does not help |
+
+The blocked four still work when you run Gun Scout locally. Getting them in
+the cloud would require routing requests through a residential proxy.
+
+**Keeping Cabela's alive:** the Coveo token can only be minted by a real
+browser on a cabelas.com page, so the deployment can't mint its own. Run the
+relay on a machine that can (your dev box):
+
+```bash
+python push_token.py
+```
+
+It mints and donates the token to the deployment, which shares it with every
+visitor. Tokens last ~4 h — schedule it every 3 (the file's docstring has
+ready-made `schtasks` / `cron` lines). Set `GS_TOKEN_PUSH_KEY` to the same
+value on both the deployment and the relay machine so only you can push.
 - Search history never reaches the server (it lives in each visitor's browser
   sessionStorage, inputs only), and results evaporate from RAM ~15 minutes
   after a search finishes — there's nothing user-identifying to store or leak.

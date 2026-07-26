@@ -1,19 +1,21 @@
-"""Shared Cabela's Coveo token manager (DB-backed, crowd-refreshed).
+"""Shared Cabela's Coveo token manager (DB-backed, operator-relayed).
 
-Cabela's search runs on Coveo, which needs a short-lived (~4h) bearer token.
-The token can only be minted by a real browser (Akamai blocks server-side
-requests) — but the mint endpoint is CORS-open, so ANY visitor's browser can
-fetch one from our own pages. The lifecycle in production:
+Cabela's search runs on Coveo, and — importantly — Coveo itself answers from
+ANY IP, including a cloud host. Only the short-lived (~4h) bearer token is
+hard to get: minting it requires a real browser sitting on a cabelas.com page
+(Akamai 403s server-side requests, and the mint endpoint sends no CORS
+headers, so a visitor's browser can't mint it from our origin either).
+
+So the lifecycle is:
 
   * The one current token lives in the app database (statstore kv table) and
-    is shared by every user — nobody configures anything.
-  * The search page checks GET /api/cabelas/token; only when the shared token
-    is aged does the visitor's browser silently mint a fresh one straight
-    from cabelas.com and POST it back. accept_token() validates it hard
-    (pinned Coveo org + live catalog probe) before it may replace the shared
-    token, so a bad or malicious push can never poison the shared slot.
-  * On a dev box with Node, `cabelas_minter/mint.js` (headed Playwright/Edge)
-    still mints transparently server-side as a fallback.
+    is shared by every user of the deployment — visitors configure nothing.
+  * A machine that CAN mint (a dev box with the Node/Playwright minter set up
+    and a residential IP) donates tokens to the deployment by running
+    `push_token.py`, ideally on a 3-hourly schedule.
+  * accept_token() validates every incoming token hard — pinned Coveo org,
+    not near expiry, and it must answer a live catalog probe — before it may
+    replace the shared token, so the shared slot can't be poisoned.
 
 Run it directly to mint/verify without touching the app:
     python cabelas_token.py            # ensure a fresh token, print status
@@ -38,8 +40,8 @@ MINTER_JS = MINTER_DIR / "mint.js"
 
 _KV_KEY = "cabelas_coveo_token"
 
-# The public CORS-open endpoint a visitor's browser mints from (served to the
-# frontend via /api/cabelas/token so it lives in exactly one place).
+# The endpoint a real browser on cabelas.com mints from. Reported by the
+# status API for diagnostics; only reachable from a cabelas.com origin.
 MINT_URL = "https://www.cabelas.com/api/v2/10651/prod/coveo/getCoveoToken"
 
 # Tokens are only accepted for Bass Pro/Cabela's production Coveo org — a
@@ -193,9 +195,9 @@ def get_valid_token(force: bool = False) -> str:
 
     if not _minter_available():
         raise MintError(
-            "the shared Cabela's token is stale; it refreshes automatically "
-            "when someone opens the Gun Scout search page in a browser "
-            "(or run `python cabelas_token.py` on a machine with Node).")
+            "the shared Cabela's token has expired — it is refreshed by the "
+            "operator's relay (`python push_token.py`), which mints one in a "
+            "real browser and donates it to this deployment.")
 
     with _lock:
         # re-read inside the lock: another thread/visitor may have just minted

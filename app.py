@@ -14,6 +14,7 @@ Cloud deploy:  set PORT (free hosts inject it) — the app binds 0.0.0.0 and
                redeploys. Run a single process (1 worker) — the fact store
                lives in process memory.
 """
+import hmac
 import logging
 import os
 
@@ -146,8 +147,13 @@ def cabelas_token_status():
 
 @app.post("/api/cabelas/token")
 def cabelas_token_push():
-    """A visitor's browser minted a fresh token from cabelas.com — validate it
-    hard (pinned org + live catalog probe) and make it the shared token."""
+    """Accept a freshly-minted token from the operator's relay (push_token.py)
+    and make it the shared token. Validated hard (pinned org + live catalog
+    probe) regardless, so the worst a leaked key allows is donating a
+    perfectly good token."""
+    key = os.environ.get("GS_TOKEN_PUSH_KEY", "")
+    if key and not hmac.compare_digest(request.headers.get("X-Push-Key", ""), key):
+        return jsonify({"error": "bad or missing push key"}), 403
     payload = request.get_json(force=True, silent=True) or {}
     accepted, message = cabelas_token.accept_token(payload.get("token") or "")
     body = {"accepted": accepted, "message": message,
