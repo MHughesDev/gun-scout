@@ -34,6 +34,7 @@ def fetch(url: str, timeout: int = 30, data: str | None = None,
     pass a genuine Chrome fingerprint. Falls back to the normal path if curl_cffi
     isn't installed or errors before returning a response."""
     hdrs = {"User-Agent": UA, **(headers or {})}
+    status = None   # HTTP status once some path has produced one
     if impersonate:
         try:
             from curl_cffi import requests as _cffi
@@ -73,15 +74,32 @@ def fetch(url: str, timeout: int = 30, data: str | None = None,
         if proc.returncode == 0:
             body, _, code = proc.stdout.decode("utf-8", errors="replace").rpartition("\n")
             status = int(code or 0)
-            if status >= 400:
-                raise FetchError(status)
-            return body
-        # curl itself failed (network etc.) -> fall through to requests
+            if status < 400:
+                return body
+            # an HTTP error from curl is final for this path — do NOT re-run
+            # the same request through requests, which looks even less like a
+            # browser. Falls through to the 403 retry / raise below.
+        else:
+            status = None  # curl itself failed (network etc.) -> try requests
 
-    if data is not None:
-        resp = requests.post(url, data=data, headers=hdrs, timeout=timeout)
-    else:
-        resp = requests.get(url, headers=hdrs, timeout=timeout)
-    if resp.status_code >= 400:
-        raise FetchError(resp.status_code)
-    return resp.text
+    if status is None:
+        if data is not None:
+            resp = requests.post(url, data=data, headers=hdrs, timeout=timeout)
+        else:
+            resp = requests.get(url, headers=hdrs, timeout=timeout)
+        if resp.status_code < 400:
+            return resp.text
+        status = resp.status_code
+
+    if status == 403 and not impersonate:
+        # Last resort: retry once with a full forged Chrome TLS+HTTP2
+        # fingerprint. Plain curl/requests are obvious non-browsers to
+        # Cloudflare, which is far stricter from datacenter IPs than from a
+        # home connection — so a fetch that works locally can 403 once hosted.
+        # Only ever runs on a 403, so working sites are untouched.
+        try:
+            return fetch(url, timeout=timeout, data=data, headers=headers,
+                         impersonate="chrome124")
+        except Exception:
+            pass  # impersonation didn't help either; report the original 403
+    raise FetchError(status)

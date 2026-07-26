@@ -120,7 +120,12 @@ def _fresh(store: dict) -> bool:
 # ---- minting (local dev fallback: headed browser via Node/Playwright) ------
 
 def _minter_available() -> bool:
-    return MINTER_JS.exists() and _which_node() is not None
+    """Only true on a dev box that actually set the minter up. Node alone is
+    not enough — hosted images ship Node but never `npm install`ed the
+    minter's deps, and spawning it there just crashes with MODULE_NOT_FOUND
+    and burns the failure cooldown."""
+    return (MINTER_JS.exists() and (MINTER_DIR / "node_modules").is_dir()
+            and _which_node() is not None)
 
 
 def _run_minter() -> dict:
