@@ -40,10 +40,12 @@ To deploy anywhere else (Railway / Fly / a VPS):
 - Point `GUN_SCOUT_DB` at a persistent volume (e.g. `/data/gun_scout.db`) so
   the stats fact store survives redeploys; it's the only file that matters.
 - Keys are server-side and shared by every visitor: set `GUNBROKER_DEV_KEY`
-  for GunBroker, and `CABELAS_COVEO_TOKEN` for Cabela's (the browser-based
-  token minter can't run on a headless host, so paste a token minted locally;
-  it lasts ~4 h — re-set it or run the minter on a box that can reach the
-  deploy's `cabelas_token.json` volume).
+  for GunBroker. Cabela's needs **no configuration at all**: its short-lived
+  Coveo token lives in the app DB, and when it ages, whichever visitor's
+  browser notices first silently mints a fresh one from Cabela's CORS-open
+  token endpoint and pushes it up. The server validates hard (pinned Coveo
+  org + live catalog probe) before accepting, so the shared slot can't be
+  poisoned.
 - Search history never reaches the server (it lives in each visitor's browser
   sessionStorage, inputs only), and results evaporate from RAM ~15 minutes
   after a search finishes — there's nothing user-identifying to store or leak.

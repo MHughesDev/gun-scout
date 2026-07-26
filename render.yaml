@@ -17,12 +17,11 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: 3.13.4
-      # Shared server-side keys — every visitor uses them. Set values in the
-      # Render dashboard (both optional; the affected client just reports
-      # itself blocked until its key exists).
+      # Shared server-side key — every visitor uses it. Optional; the
+      # GunBroker client just reports itself blocked until it exists.
+      # (The Cabela's Coveo token needs NO config: it lives in the app DB and
+      # visitors' browsers refresh it automatically when it ages.)
       - key: GUNBROKER_DEV_KEY   # free key: gunbroker.com > Help > API
-        sync: false
-      - key: CABELAS_COVEO_TOKEN # mint locally (python cabelas_token.py), paste; ~4 h lifetime
         sync: false
     # ---- upgrading to always-on + durable stats (paid Starter plan) ----
     # The free plan sleeps after 15 min idle and has no persistent disk, so

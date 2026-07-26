@@ -51,6 +51,12 @@ CREATE TABLE IF NOT EXISTS stat_facts (
     last_seen  REAL NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_facts_vertical ON stat_facts(vertical);
+
+CREATE TABLE IF NOT EXISTS kv (
+    k          TEXT PRIMARY KEY,   -- shared server-side key/value pairs (site tokens etc.)
+    v          TEXT NOT NULL,
+    updated_at REAL NOT NULL
+);
 """
 
 _LEGACY_TABLES = ("price_observations", "search_results", "client_status",
@@ -419,6 +425,26 @@ class StatEngine:
                 self._conn.execute("VACUUM")
                 self._conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
         return n
+
+    # ---- shared key/value store (site tokens shared by all users) ---------
+
+    def kv_get(self, key: str) -> str | None:
+        if self._conn is None:
+            return None
+        with self._dblock:
+            row = self._conn.execute("SELECT v FROM kv WHERE k=?", (key,)).fetchone()
+            return row["v"] if row else None
+
+    def kv_set(self, key: str, value: str):
+        if self._conn is None:
+            raise RuntimeError("stat engine not started")
+        with self._dblock:
+            self._conn.execute(
+                "INSERT INTO kv (k, v, updated_at) VALUES (?,?,?) "
+                "ON CONFLICT(k) DO UPDATE SET v=excluded.v, "
+                "updated_at=excluded.updated_at",
+                (key, value, time.time()))
+            self._conn.commit()
 
     # ---- auction close tracking (RAM-only; feeds hammer prices to facts) --
 

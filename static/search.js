@@ -333,9 +333,37 @@ function renderRows() {
   updateHScroll();
 }
 
+/* ---------------- shared Cabela's token (crowd-refreshed) ----------------
+   Cabela's needs a short-lived Coveo token that only a real browser can mint
+   (their mint endpoint is CORS-open). The server keeps ONE shared token in
+   its DB for all users; when it's aged, whichever visitor's browser notices
+   first silently mints a fresh one and pushes it up. The server validates
+   hard before accepting, and everyone else just keeps sharing it. */
+let cabelasMintAt = 0;
+async function ensureCabelasToken() {
+  try {
+    const st = await (await fetch('/api/cabelas/token')).json();
+    if (!st.needs_refresh || !st.mint_url) return;
+    if (Date.now() - cabelasMintAt < 60000) return;  // one attempt a minute
+    cabelasMintAt = Date.now();
+    const r = await fetch(st.mint_url, {method: 'POST'});
+    if (!r.ok) return;
+    const j = await r.json();
+    if (!j.token) return;
+    await fetch('/api/cabelas/token', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({token: j.token}),
+    });
+  } catch (e) { /* best-effort — search proceeds either way */ }
+}
+
 /* ---------------- search + poll ---------------- */
 async function runSearch() {
   const c = criteria();
+  // give the crowd-refresh a beat to land a fresh Cabela's token first, but
+  // never hold the search hostage on it
+  if (VERTICAL === 'guns')
+    await Promise.race([ensureCabelasToken(), new Promise(r => setTimeout(r, 2500))]);
   clearInterval(pollTimer);
   rows = []; lastId = 0; renderRows();
   $('empty').textContent = 'Searching…';
@@ -631,6 +659,7 @@ async function loadVertical() {
   await loadSites();
   fetch('/api/health').then(r => r.json()).then(renderHealth);
   loadHistory();
+  if (VERTICAL === 'guns') ensureCabelasToken();  // fire-and-forget on page load
 }
 
 (async () => {

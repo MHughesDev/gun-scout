@@ -19,6 +19,7 @@ import os
 
 from flask import Flask, jsonify, request, send_from_directory
 
+import cabelas_token
 import close_poller
 import search_manager
 import statstore
@@ -120,6 +121,26 @@ def vertical_stats(vertical):
     args = request.args.to_dict()
     args["vertical"] = vertical
     return jsonify(stats_mod.compute(args))
+
+
+# ---- shared Cabela's token (crowd-refreshed, stored in the app DB) -------
+
+@app.get("/api/cabelas/token")
+def cabelas_token_status():
+    """Freshness of the shared Coveo token + where a browser can mint one.
+    The token value itself never leaves the server this way."""
+    return jsonify(cabelas_token.public_status())
+
+
+@app.post("/api/cabelas/token")
+def cabelas_token_push():
+    """A visitor's browser minted a fresh token from cabelas.com — validate it
+    hard (pinned org + live catalog probe) and make it the shared token."""
+    payload = request.get_json(force=True, silent=True) or {}
+    accepted, message = cabelas_token.accept_token(payload.get("token") or "")
+    body = {"accepted": accepted, "message": message,
+            **cabelas_token.public_status()}
+    return jsonify(body), (200 if accepted else 400)
 
 
 # ---- health & data mgmt (vertical-agnostic) ------------------------------

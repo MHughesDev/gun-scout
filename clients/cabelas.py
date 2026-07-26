@@ -14,13 +14,13 @@ firearm-class, price) and supports server-side filtering + pagination. Probed
 
 The one catch: Coveo requires a short-lived (~4h) anonymous bearer token, and
 that token is minted only by `POST cabelas.com/api/v2/.../coveo/getCoveoToken`
-— which IS behind Akamai, so plain HTTP can't mint it. `cabelas_token.py` mints
-it automatically by driving a real (headed) browser via Playwright, caches it
-with its expiry, and transparently re-mints when it goes stale — so this client
-just asks for a token and never worries about freshness. If the minter can't
-run (Node/Playwright not set up, or Akamai blocks it) the client reports itself
-blocked, like the GunBroker client without a dev key. A manual token can still
-be forced via the CABELAS_COVEO_TOKEN env var (no browser needed then).
+— which IS behind Akamai, so plain server-side HTTP can't mint it. But the
+endpoint is CORS-open, so visitors' browsers can: `cabelas_token.py` keeps ONE
+shared token in the app DB, the search page auto-refreshes it from whichever
+visitor's browser notices it's aged, and a dev box with Node can still mint
+via the headed-browser fallback. This client just asks for a token and never
+worries about freshness; when no valid token exists yet it reports itself
+blocked, like the GunBroker client without a dev key.
 
 Server-side filters (Coveo advanced query `aq`): @isgun==1 (guns only, drops
 ammo/optics/gear), @isusedgun==1 / @isnew==1 (condition), @offerprice range.
@@ -321,8 +321,8 @@ class CabelasClient(SiteClient):
         if not cabelas_token.status().get("fresh"):
             return self._health(
                 "degraded",
-                "no cached Coveo token yet — it will be minted on first search "
-                "(run `python cabelas_token.py` to pre-mint and verify)",
+                "no fresh shared Coveo token — it refreshes automatically when "
+                "someone opens the search page in a browser",
                 0, time.time())
         return super().health_check()
 
