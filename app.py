@@ -46,6 +46,14 @@ app.config["MAX_CONTENT_LENGTH"] = 24 * 1024 * 1024
 # locally, not for visitors, so the API refuses it and the frontend hides it.
 PUBLIC = bool(os.environ.get("GS_PUBLIC") or os.environ.get("PORT"))
 
+# Page ceiling for visitor searches. Locally a search walks every site to
+# exhaustion, which is fine on your own machine — but hosted, each page is
+# pulled through the operator's home connection, and one uncapped search
+# measured 192 MB. Capping depth keeps a public search to a sane slice of
+# that (and stops the worker's own rate limiter from truncating results
+# mid-run). Raise GS_PUBLIC_MAX_PAGES for deeper coverage at more data.
+PUBLIC_MAX_PAGES = int(os.environ.get("GS_PUBLIC_MAX_PAGES", "5"))
+
 
 def _vert_or_404(vertical: str):
     v = verticals.VERTICALS.get(vertical)
@@ -119,6 +127,8 @@ def start_search(vertical):
     payload = request.get_json(force=True) or {}
     payload["vertical"] = vertical          # path is the source of truth
     criteria = SearchCriteria.from_dict(payload)
+    if PUBLIC and criteria.max_pages is None:
+        criteria.max_pages = PUBLIC_MAX_PAGES
     return jsonify({"search_id": search_manager.start_search(criteria)})
 
 
