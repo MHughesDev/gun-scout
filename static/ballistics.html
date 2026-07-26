@@ -1,0 +1,1584 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gun Scout — Ballistics</title>
+<style>
+  :root {
+    --bg: #12151a; --panel: #1b2027; --panel2: #222933; --border: #2e3742;
+    --text: #e6ebf1; --muted: #8a97a5; --accent: #4da3ff; --accent2: #35c48d;
+    --warn: #e6b04b; --err: #e46a6a;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 14px/1.45 system-ui, Segoe UI, sans-serif; }
+  header { padding: 14px 22px; border-bottom: 1px solid var(--border);
+           display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+  header h1 { margin: 0; font-size: 19px; letter-spacing: .5px; }
+  header > span { color: var(--muted); font-size: 12px; }
+  #appNav { margin-left: auto; display: inline-flex; border: 1px solid var(--border);
+            border-radius: 7px; overflow: hidden; align-self: center; }
+  #appNav a { color: var(--muted); font-size: 13px; padding: 6px 16px; cursor: pointer;
+              text-decoration: none; }
+  #appNav a + a { border-left: 1px solid var(--border); }
+  #appNav a:hover { color: var(--text); }
+  #appNav a.active { background: var(--accent); color: #0c1015; font-weight: 600; }
+  #unitBar { display: inline-flex; gap: 6px; align-self: center; }
+  #unitBar button { background: var(--panel2); border: 1px solid var(--border); color: var(--muted);
+                    font-size: 11px; border-radius: 6px; padding: 4px 8px; cursor: pointer; }
+  #unitBar button:hover { color: var(--text); }
+
+  main { display: grid; grid-template-columns: 330px 1fr; min-height: calc(100vh - 55px); }
+  #rail { background: var(--panel); border-right: 1px solid var(--border);
+          padding: 16px; display: flex; flex-direction: column; gap: 16px; }
+  #rail h3 { margin: 0; font-size: 11px; text-transform: uppercase; letter-spacing: .8px;
+             color: var(--muted); font-weight: 600; display: flex; align-items: center; gap: 8px; }
+  #rail h3 .rst { margin-left: auto; cursor: pointer; color: var(--muted); font-size: 12px; }
+  #rail h3 .rst:hover { color: var(--accent); }
+  #rail label { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: .7px;
+                color: var(--muted); margin: 7px 0 3px; }
+  #rail input, #rail select { width: 100%; background: var(--panel2); color: var(--text);
+    border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; font-size: 13px; }
+  #rail input:focus, #rail select:focus { outline: none; border-color: var(--accent); }
+  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .row3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+  .chk { display: flex !important; align-items: center; gap: 7px; text-transform: none !important;
+         letter-spacing: 0 !important; font-size: 12px !important; color: var(--text) !important; }
+  .chk input { width: auto !important; }
+  .hint { color: var(--muted); font-size: 11px; margin-top: 3px; }
+  .roline { color: var(--muted); font-size: 12px; margin-top: 6px; }
+  .roline b { color: var(--text); }
+  details.adv { border: 1px solid var(--border); border-radius: 7px; padding: 6px 9px; margin-top: 8px; }
+  details.adv summary { cursor: pointer; color: var(--muted); font-size: 12px; }
+
+  /* loadout chips */
+  #loadoutList { display: flex; flex-direction: column; gap: 6px; }
+  .lo { border: 1px solid var(--border); border-radius: 7px; padding: 7px 9px;
+        background: var(--panel2); font-size: 12px; }
+  .lo .top { display: flex; align-items: center; gap: 8px; }
+  .lo .swatch { width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0; }
+  .lo .lname { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis;
+               white-space: nowrap; font-weight: 600; }
+  .lo .rm { background: none; border: 0; color: var(--muted); cursor: pointer; font-size: 14px; }
+  .lo .rm:hover { color: var(--err); }
+  .lo small { color: var(--muted); display: block; margin-top: 2px; }
+  #addLoBtn { background: var(--accent); color: #0c1015; font-weight: 600; border: 0;
+              border-radius: 7px; padding: 9px; font-size: 13px; cursor: pointer; width: 100%; }
+  #addLoBtn:hover { filter: brightness(1.1); }
+
+  /* picker panel */
+  #picker { border: 1px solid var(--accent); border-radius: 9px; padding: 12px;
+            background: var(--panel2); }
+  #picker h4 { margin: 0 0 4px; font-size: 12px; color: var(--accent); }
+  #picker .foot { margin-top: 10px; display: flex; gap: 8px; align-items: center; }
+  #picker .foot button { border: 0; border-radius: 6px; padding: 8px 14px; font-size: 13px;
+                         cursor: pointer; }
+  #pkAdd { background: var(--accent2); color: #0c1015; font-weight: 600; }
+  #pkCancel { background: none; border: 1px solid var(--border) !important; color: var(--muted); }
+  #pkPreview { font-size: 11px; color: var(--muted); margin-top: 8px; line-height: 1.5; }
+  #pkPreview b { color: var(--accent2); }
+
+  /* quality + sg chips */
+  .qchip { display: inline-block; border-radius: 4px; font-size: 10px; font-weight: 700;
+           padding: 1px 6px; letter-spacing: .3px; cursor: default; }
+  .q-Measured { background: var(--accent2); color: #0c1015; }
+  .q-Trued { background: #5fd4d0; color: #0c1015; }
+  .q-Estimated { background: var(--warn); color: #0c1015; }
+  .q-Nominal { background: var(--border); color: var(--text); }
+  .sgchip { display: inline-block; border-radius: 4px; font-size: 10px; font-weight: 700;
+            padding: 1px 6px; cursor: default; }
+  .sg-stable { background: var(--accent2); color: #0c1015; }
+  .sg-marginal { background: var(--warn); color: #0c1015; }
+  .sg-unstable { background: var(--err); color: #0c1015; }
+  .sg-smoothbore, .sg-unknown { background: var(--border); color: var(--muted); }
+
+  /* stage */
+  #stage { padding: 16px 20px; min-width: 0; }
+  #empty { color: var(--muted); padding: 60px 0; text-align: center; }
+  #empty button { background: var(--panel2); border: 1px solid var(--border); color: var(--accent);
+                  border-radius: 7px; padding: 8px 14px; margin: 8px 6px 0; cursor: pointer; font-size: 13px; }
+  #empty button:hover { border-color: var(--accent); }
+  #dataErr { color: var(--err); padding: 24px; border: 1px solid var(--err); border-radius: 9px;
+             margin-bottom: 14px; display: none; }
+  #dataErr button { background: var(--err); color: #0c1015; border: 0; border-radius: 6px;
+                    padding: 6px 12px; cursor: pointer; margin-left: 10px; }
+
+  /* stat cards */
+  #cards { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 8px; margin-bottom: 10px; }
+  .card { min-width: 240px; background: var(--panel); border: 1px solid var(--border);
+          border-radius: 10px; padding: 10px 12px; font-size: 12px; flex-shrink: 0; }
+  .card .hd { display: flex; align-items: center; gap: 7px; margin-bottom: 6px; }
+  .card .swatch { width: 10px; height: 10px; border-radius: 3px; }
+  .card .nm { font-weight: 700; font-size: 12px; flex: 1; min-width: 0;
+              overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .card .r { display: flex; justify-content: space-between; gap: 8px; padding: 1.5px 0; }
+  .card .r span { color: var(--muted); }
+  .card .r b { font-weight: 600; text-align: right; }
+  .card .warnline { color: var(--warn); font-size: 11px; margin-top: 4px; }
+  .card input.pin { width: 54px; background: var(--panel2); border: 1px solid var(--border);
+                    color: var(--text); border-radius: 4px; font-size: 11px; padding: 1px 4px; }
+
+  /* tabs + chart */
+  #tabs { display: inline-flex; border: 1px solid var(--border); border-radius: 7px;
+          overflow: hidden; margin-bottom: 10px; }
+  #tabs button { background: none; border: 0; color: var(--muted); font-size: 13px;
+                 padding: 6px 13px; cursor: pointer; }
+  #tabs button + button { border-left: 1px solid var(--border); }
+  #tabs button:hover { color: var(--text); }
+  #tabs button.active { background: var(--accent); color: #0c1015; font-weight: 600; }
+  #chartWrap { background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+               padding: 10px; margin-bottom: 14px; position: relative; }
+  #chart { width: 100%; display: block; cursor: crosshair; }
+  #chartCtl { position: absolute; top: 10px; right: 12px; display: flex; gap: 8px; z-index: 5; }
+  #chartCtl label { color: var(--muted); font-size: 11px; display: inline-flex; gap: 5px;
+                    align-items: center; background: var(--panel); padding: 2px 6px;
+                    border-radius: 5px; border: 1px solid var(--border); }
+  #legend { display: flex; gap: 14px; flex-wrap: wrap; padding: 8px 6px 2px; }
+  #legend span { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+  #legend i { width: 14px; height: 3px; border-radius: 2px; display: inline-block; }
+  #tip { position: absolute; pointer-events: none; background: #10141a; border: 1px solid var(--border);
+         border-radius: 7px; padding: 7px 10px; font-size: 11.5px; z-index: 10; display: none;
+         box-shadow: 0 8px 22px rgba(0,0,0,.5); min-width: 170px; }
+  #tip .t { color: var(--muted); margin-bottom: 3px; }
+  #tip .l { display: flex; gap: 8px; align-items: baseline; }
+  #tip .l i { width: 8px; height: 8px; border-radius: 2px; display: inline-block; flex-shrink: 0; }
+  #tip .l small { color: var(--muted); }
+  #busy { height: 3px; background: var(--panel2); border-radius: 2px; overflow: hidden;
+          margin-bottom: 8px; visibility: hidden; }
+  #busy i { display: block; height: 100%; width: 40%; background: var(--accent);
+            animation: slide 1s linear infinite; }
+  @keyframes slide { 0% { margin-left: -40%; } 100% { margin-left: 100%; } }
+
+  /* table */
+  #tblCtl { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; flex-wrap: wrap; }
+  #tblCtl label { color: var(--muted); font-size: 12px; }
+  #tblCtl select { background: var(--panel2); color: var(--text); border: 1px solid var(--border);
+                   border-radius: 6px; padding: 5px 8px; font-size: 12px; }
+  #tblCtl button { background: none; border: 1px solid var(--border); color: var(--muted);
+                   border-radius: 6px; padding: 6px 10px; font-size: 12px; cursor: pointer; }
+  #tblCtl button:hover { color: var(--text); border-color: var(--accent); }
+  table { border-collapse: collapse; width: 100%; }
+  th, td { text-align: right; padding: 6px 9px; border-bottom: 1px solid var(--border);
+           font-size: 12.5px; white-space: nowrap; }
+  th { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .6px;
+       position: sticky; top: 0; background: var(--bg); }
+  th:first-child, td:first-child { text-align: left; }
+  tr:hover td { background: #1a2028; }
+  td.zero { color: var(--accent2); font-weight: 600; }
+  #btWrap { overflow-x: auto; }
+  td .pm { color: var(--muted); font-size: 10.5px; }
+
+  /* truing */
+  #truing { max-width: 640px; }
+  #truing .box { background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+                 padding: 14px; margin-bottom: 12px; }
+  #truing label { display: block; font-size: 11px; text-transform: uppercase;
+                  letter-spacing: .7px; color: var(--muted); margin: 8px 0 3px; }
+  #truing input, #truing select { background: var(--panel2); color: var(--text);
+    border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; font-size: 13px; width: 100%; }
+  #truing button { background: var(--accent); color: #0c1015; font-weight: 600; border: 0;
+                   border-radius: 7px; padding: 8px 16px; font-size: 13px; cursor: pointer; margin-top: 10px; }
+  #truing .sess { border: 1px solid var(--border); border-radius: 7px; padding: 7px 10px;
+                  font-size: 12px; margin-top: 6px; display: flex; gap: 10px; align-items: center; }
+  #truing .sess .del { margin-left: auto; color: var(--muted); cursor: pointer; }
+  #truing .sess .del:hover { color: var(--err); }
+  #truing .stale { color: var(--warn); font-size: 11px; }
+  #trResult { margin-top: 10px; font-size: 13px; }
+  #trResult b { color: var(--accent2); }
+  .note { color: var(--muted); font-size: 11px; margin-top: 12px; max-width: 780px; line-height: 1.5; }
+
+  /* methodology */
+  #methodology { margin-top: 26px; border-top: 1px solid var(--border); padding-top: 14px;
+                 max-width: 860px; }
+  #methodology h2 { font-size: 15px; }
+  #methodology h3 { font-size: 13px; margin: 14px 0 4px; color: var(--accent); }
+  #methodology p, #methodology li { font-size: 12.5px; color: var(--muted); line-height: 1.55; }
+  #methodology code { background: var(--panel2); border-radius: 4px; padding: 1px 5px;
+                      font-size: 11.5px; color: var(--text); }
+
+  /* self test */
+  #selftest td.pass { color: var(--accent2); } #selftest td.fail { color: var(--err); }
+
+  /* ---------- guided tutorial ---------- */
+  #tutBtn { align-self: center; background: var(--accent); color: #0c1015; font-weight: 600;
+            border: 0; border-radius: 6px; padding: 5px 11px; font-size: 12px; cursor: pointer; }
+  #tutBtn:hover { filter: brightness(1.1); }
+  .tut-catch { position: fixed; inset: 0; z-index: 8990; cursor: default; }
+  .tut-hole { position: fixed; z-index: 8992; border-radius: 8px; pointer-events: none;
+              box-shadow: 0 0 0 9999px rgba(7,9,13,.82); border: 2px solid var(--accent);
+              transition: top .28s cubic-bezier(.4,0,.2,1), left .28s cubic-bezier(.4,0,.2,1),
+                          width .28s cubic-bezier(.4,0,.2,1), height .28s cubic-bezier(.4,0,.2,1); }
+  .tut-hole.pulse { animation: tutPulse 1.7s ease-in-out infinite; }
+  @keyframes tutPulse {
+    0%,100% { box-shadow: 0 0 0 9999px rgba(7,9,13,.82), 0 0 0 0 rgba(77,163,255,.55); }
+    50%     { box-shadow: 0 0 0 9999px rgba(7,9,13,.82), 0 0 0 8px rgba(77,163,255,0); } }
+  .tut-box { position: fixed; z-index: 8994; width: 344px; max-width: calc(100vw - 24px);
+             max-height: 80vh; overflow-y: auto; background: #141a22; color: var(--text);
+             border: 1px solid var(--accent); border-radius: 12px; padding: 15px 17px 14px;
+             box-shadow: 0 18px 52px rgba(0,0,0,.62); transition: top .26s ease, left .26s ease; }
+  .tut-box .step { color: var(--muted); font-size: 10.5px; text-transform: uppercase;
+                   letter-spacing: .7px; margin-bottom: 5px; }
+  .tut-box h4 { margin: 0 0 8px; font-size: 16px; color: var(--accent); }
+  .tut-box .body { font-size: 13px; line-height: 1.58; color: var(--text); }
+  .tut-box .body b { color: var(--accent2); font-weight: 600; }
+  .tut-box .body .term { color: var(--warn); font-weight: 700; }
+  .tut-box .tut-progress { height: 3px; background: var(--panel2); border-radius: 2px;
+                           margin-top: 12px; overflow: hidden; }
+  .tut-box .tut-progress i { display: block; height: 100%; background: var(--accent); transition: width .28s; }
+  .tut-box .foot { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
+  .tut-box .foot .sp { flex: 1; }
+  .tut-box button { border: 0; border-radius: 7px; padding: 7px 13px; font-size: 12.5px; cursor: pointer; }
+  .tut-box .tut-next { background: var(--accent); color: #0c1015; font-weight: 600; }
+  .tut-box .tut-next:hover { filter: brightness(1.1); }
+  .tut-box .tut-back { background: none; border: 1px solid var(--border); color: var(--muted); }
+  .tut-box .tut-back:hover { color: var(--text); }
+  .tut-box .tut-skip { background: none; color: var(--muted); font-size: 11.5px; padding: 7px 4px; }
+  .tut-box .tut-skip:hover { color: var(--err); }
+
+  /* DOPE print */
+  #dope { display: none; }
+  @media print {
+    body > *:not(#dope) { display: none !important; }
+    #dope { display: block !important; color: #000; background: #fff; font: 11px/1.4 monospace; }
+    #dope table { width: auto; } #dope th, #dope td { border: 1px solid #000; padding: 2px 7px; color: #000; }
+    #dope h2 { font-size: 14px; margin: 0 0 4px; } #dope p { margin: 2px 0; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>Gun Scout</h1>
+  <span>ballistic engine — measured-anchored · physics-forward · uncertainty-quantified</span>
+  <button id="tutBtn" title="Guided walkthrough of every control and abbreviation">▶ Tutorial</button>
+  <div id="unitBar">
+    <button id="uDist" title="range unit">yd</button>
+    <button id="uLin" title="drop/drift unit">in</button>
+    <button id="uAng" title="angular unit">MOA</button>
+    <button id="uTemp" title="temperature unit">°F</button>
+  </div>
+  <nav id="appNav">
+    <a href="/">Search</a>
+    <a href="/stats">Stats</a>
+    <a href="/ballistics" class="active">Ballistics</a>
+  </nav>
+</header>
+<main>
+<aside id="rail">
+  <div id="grpLoadouts">
+    <h3>Loadouts <span style="color:var(--border)">·</span>
+      <span style="text-transform:none;letter-spacing:0">gun + ammo</span></h3>
+    <div id="loadoutList" style="margin-top:8px"></div>
+    <div id="picker" style="display:none;margin-top:8px"></div>
+    <button id="addLoBtn" style="margin-top:8px">+ Add loadout</button>
+  </div>
+
+  <div id="grpCond">
+    <h3>Conditions <span class="rst" data-rst="cond" title="reset to defaults">↺</span></h3>
+    <div class="row2">
+      <div><label>Temp (<span class="tU">°F</span>)</label><input id="cTemp" inputmode="decimal" value="59"></div>
+      <div><label>Humidity %</label><input id="cRH" inputmode="numeric" value="0"></div>
+    </div>
+    <label>Altitude / pressure</label>
+    <div class="row2" id="cAltRow">
+      <select id="cAltMode"><option value="altitude">Altitude (ft)</option><option value="pressure">Station inHg</option></select>
+      <input id="cAltVal" inputmode="decimal" value="0">
+    </div>
+    <div class="roline">Density altitude: <b id="cDA">0 ft</b></div>
+    <div class="row2">
+      <div><label>Wind (mph)</label><input id="cWind" inputmode="decimal" value="10"></div>
+      <div><label>Wind from</label>
+        <select id="cWindDir"></select></div>
+    </div>
+    <details class="adv"><summary>Powder temp & advanced</summary>
+      <label>Powder temp (<span class="tU">°F</span>, blank = ambient)</label><input id="cPowderT" inputmode="decimal">
+      <label class="chk" style="margin-top:8px"><input type="checkbox" id="cCorOn"> Coriolis</label>
+      <div class="row2">
+        <div><label>Latitude °</label><input id="cLat" inputmode="decimal" value="45"></div>
+        <div><label>Azimuth ° (0=N)</label><input id="cAz" inputmode="decimal" value="0"></div>
+      </div>
+      <label>Wind gust σ (mph, blank = 35%)</label><input id="cGust" inputmode="decimal">
+    </details>
+  </div>
+
+  <div id="grpTarget">
+    <h3>Target <span class="rst" data-rst="target" title="reset to defaults">↺</span></h3>
+    <div class="row2">
+      <div><label>Zero (<span class="dU">yd</span>)</label><input id="tZero" inputmode="numeric" value="100"></div>
+      <div><label>Vital zone Ø (in)</label><input id="tVital" inputmode="decimal" value="6"></div>
+    </div>
+    <div class="row2" id="tRangeRow">
+      <div><label>Max range (<span class="dU">yd</span>)</label><input id="tMax" inputmode="numeric" value="500"></div>
+      <div><label>Step (<span class="dU">yd</span>)</label><input id="tStep" inputmode="numeric" value="50"></div>
+    </div>
+    <label class="chk" style="margin-top:8px"><input type="checkbox" id="tRangeEst">
+      range is estimated, not lased</label>
+    <div class="hint">Precision (group size) is set per loadout on its stat card.</div>
+  </div>
+</aside>
+
+<section id="stage">
+  <div id="dataErr"><span id="dataErrMsg"></span><button onclick="location.reload()">Retry</button></div>
+  <div id="busy"><i></i></div>
+  <div id="empty">
+    <p>Build one or more <b>loadouts</b> (a gun firing an ammunition load) to simulate drop,
+    drift, velocity, energy, stability and hit probability — with honest uncertainty bands.</p>
+    <button data-demo="0">Demo: Glock 19 · Federal 124gr FMJ</button>
+    <button data-demo="1">Demo: 16″ AR-15 · XM855 62gr</button>
+    <div style="margin-top:14px"><button id="tutStartEmpty" style="border-color:var(--accent);color:var(--accent)">▶ New here? Take the guided tour</button></div>
+  </div>
+  <div id="viz" style="display:none">
+    <div id="cards"></div>
+    <div id="tabs">
+      <button data-tab="traj" class="active">Trajectory</button>
+      <button data-tab="wind">Windage</button>
+      <button data-tab="vel">Velocity / Energy</button>
+      <button data-tab="hit">Hit %</button>
+      <button data-tab="table">Table</button>
+      <button data-tab="truing">Truing</button>
+    </div>
+    <div id="chartWrap">
+      <div id="chartCtl">
+        <label id="veToggleWrap" style="display:none"><input type="checkbox" id="veToggle"> energy</label>
+        <label><input type="checkbox" id="bandsOn" checked> show spread</label>
+      </div>
+      <canvas id="chart" height="380"></canvas>
+      <div id="tip"></div>
+      <div id="legend"></div>
+    </div>
+    <div id="tableArea" style="display:none">
+      <div id="tblCtl">
+        <label>Table shows</label>
+        <select id="metricSel">
+          <option value="dropIn">Drop</option><option value="dropAng">Drop (angular)</option>
+          <option value="windIn">Windage</option><option value="windAng">Windage (angular)</option>
+          <option value="v">Velocity (fps)</option><option value="energy">Energy (ft·lb)</option>
+          <option value="mach">Mach</option><option value="tof">Time of flight (s)</option>
+          <option value="phit">Hit probability</option>
+        </select>
+        <label class="chk"><input type="checkbox" id="allCols"> all columns for</label>
+        <select id="allColsLo"></select>
+        <span style="flex:1"></span>
+        <button id="csvBtn">Export CSV</button>
+        <button id="dopeBtn">Print DOPE card</button>
+        <select id="dopeLo"></select>
+      </div>
+      <div id="btWrap"><table id="bt"><thead></thead><tbody></tbody></table></div>
+    </div>
+    <div id="truing" style="display:none">
+      <div class="box">
+        <b>True this loadout against real impacts.</b>
+        <p class="hint">Shoot a group at a known distance in calm conditions, measure the point of
+        impact vs point of aim, and the solver back-computes the muzzle velocity (and BC at long
+        range) that reconciles prediction with reality. Truing calibrates <i>this loadout</i> in
+        <i>these conditions</i> — it cannot fix a bad zero or scope error.</p>
+        <label>Loadout</label><select id="trLo"></select>
+        <div class="row3">
+          <div><label>Range (yd)</label><input id="trRange" inputmode="numeric" value="300"></div>
+          <div><label>POI vs POA (in, − = low)</label><input id="trDrop" inputmode="decimal" placeholder="-4.5"></div>
+          <div><label>Group size (MOA, opt.)</label><input id="trGroup" inputmode="decimal"></div>
+        </div>
+        <div class="roline">Session conditions (snapshotted): <b id="trCond"></b></div>
+        <button id="trSolve">Check sensitivity &amp; solve</button>
+        <div id="trResult"></div>
+      </div>
+      <div class="box"><b>Past truing sessions</b><div id="trList"></div></div>
+    </div>
+    <div class="note" id="footNote">Modified point-mass solver (RK4) with G1/G7 drag, Miller
+      stability, Litz spin-drift/aero-jump corrections (rifle domain), full atmosphere, 3-D wind
+      and optional Coriolis. Muzzle velocity is estimated from a tiered source hierarchy with
+      explicit uncertainty; bands are 10th–90th percentiles of a 400-draw Monte Carlo.
+      <a href="#methodology" style="color:var(--accent)">Methodology &amp; sources ↓</a></div>
+    <div id="methodology">
+      <h2 id="mAnchor">Methodology</h2>
+      <h3>Model class</h3>
+      <p>Modified point-mass trajectory model (same class as commercial 4-DOF solvers): RK4
+      integration of drag + gravity + optional Coriolis over the air-relative velocity, with
+      spin effects layered as empirical corrections rather than integrated forces. Drag uses the
+      standard G1/G7 reference-projectile tables scaled by the load's ballistic coefficient
+      (form-factor method); a marginal-stability BC penalty applies below Sg 1.5.</p>
+      <h3>Muzzle velocity tiers</h3>
+      <p><b>Measured</b> (your chronograph, σ = SD/√n) → <b>Trued</b> (back-solved from observed
+      drops) → <b>Estimated</b> (factory velocity rescaled to your barrel length via a Le Duc
+      curve <code>v(L)=aL/(L+b)</code> fit to published chop-test data; σ = √(30² + fit rms²)) →
+      <b>Nominal</b> (factory number as-is, σ = 75 fps). Powder-temperature sensitivity and
+      revolver cylinder-gap loss are applied as class priors. Shot-to-shot SD comes from the
+      load's class (match 12 / defensive 20 / bulk 30 fps).</p>
+      <h3>Spin &amp; stability</h3>
+      <p>Gyroscopic stability via the Miller twist rule with velocity and air-density
+      corrections; Sg &lt; 1.0 = predicted tumble (trajectory suppressed), 1.0–1.5 = marginal
+      (≈3% BC loss per 0.1 Sg). Spin drift <code>1.25·(Sg+1.2)·t^1.83</code> and crosswind
+      aerodynamic jump <code>(0.01·Sg − 0.0024·l + 0.032) MOA/mph</code> are Litz's empirical
+      fits, valid for spin-stabilized rifle bullets (Sg clamped to ≤2.5; suppressed for
+      handgun/rimfire/shotgun classes where the fits are out of domain).</p>
+      <h3>Uncertainty</h3>
+      <p>400 Monte Carlo draws per loadout sample MV (shot SD + systematic σ), BC tolerance
+      (2–3.5%), wind gusting (default σ = 35% of speed) and temperature. Bands are P10–P90.
+      Hit probability combines the Monte Carlo dispersion with your rifle's precision
+      (an X-MOA group is treated as 3σ radial, so σ = X/3 per axis) over a circular vital
+      zone, via the exact 1-D reduction of the disk integral. A quoted "90% effective range"
+      is the farthest range with P(hit) ≥ 0.90.</p>
+      <h3>Known limits</h3>
+      <p>Factory ammunition's powder is proprietary — no interior-ballistics simulation is
+      attempted; measurement (chronograph or truing) is the only route to tier-1 accuracy.
+      Fidelity degrades through the transonic band (marked on charts). Miller's rule reads
+      conservative for plastic-tipped and monolithic bullets. Barrel-curve scaling is an
+      estimate: ±30–50 fps is normal gun-to-gun variation even at the same barrel length.</p>
+      <h3>Sources</h3>
+      <ul>
+        <li>G1/G7 drag tabulations — McCoy/BRL standard projectiles (JBM Ballistics)</li>
+        <li>Barrel-length curves — BallisticsByTheInch chop tests (handgun);
+            Rifleshooter.com / AccurateShooter cut-down series (.223, .308, 6.5 CM)</li>
+        <li>Stability &amp; spin corrections — Miller (2005); Litz, <i>Applied Ballistics for
+            Long Range Shooting</i></li>
+        <li>Measured G7 BCs — Litz / Applied Ballistics via the JBM bullet library</li>
+        <li>Test-barrel standards — ANSI/SAAMI; factory velocities &amp; BCs — manufacturer
+            catalogs (per-row source in the library)</li>
+        <li>Recoil — SAAMI free-recoil method (powder charge estimated per cartridge)</li>
+      </ul>
+    </div>
+    <div id="selftest"></div>
+  </div>
+</section>
+</main>
+<div id="dope"></div>
+
+<script src="/ballistics_engine.js"></script>
+<script>
+'use strict';
+const $ = id => document.getElementById(id);
+const esc = s => { const d = document.createElement('div'); d.textContent = s ?? ''; return d.innerHTML; };
+const COLORS = ['#4da3ff', '#35c48d', '#e6b04b', '#e46a6a', '#c07ef0', '#5fd4d0'];
+const CLOCKS = [[0,'12 o’clock (head)'],[30,'1'],[60,'2'],[90,'3 o’clock (right)'],[120,'4'],[150,'5'],
+  [180,'6 o’clock (tail)'],[210,'7'],[240,'8'],[270,'9 o’clock (left)'],[300,'10'],[330,'11']];
+
+/* ---------- units ---------- */
+const U = { dist: 'yd', lin: 'in', ang: 'MOA', temp: 'F' };
+const fmtDist = yd => U.dist === 'yd' ? Math.round(yd) : Math.round(yd * 0.9144);
+const distLabel = () => U.dist === 'yd' ? 'yd' : 'm';
+const fmtLin = v => U.lin === 'in' ? v.toFixed(1) : (v * 2.54).toFixed(1);
+const linLabel = () => U.lin === 'in' ? 'in' : 'cm';
+const toAng = (inches, yd) => yd <= 0 ? 0 :
+  (U.ang === 'MOA' ? inches / (1.047 * yd / 100) : inches / (3.6 * yd / 100));
+const angLabel = () => U.ang === 'MOA' ? 'MOA' : 'mil';
+const dispTemp = f => U.temp === 'F' ? f : (f - 32) / 1.8;
+const readTemp = v => U.temp === 'F' ? v : v * 1.8 + 32;
+
+/* ---------- persistent store (spec §10.5) ---------- */
+const LS_KEY = 'gs_ballistics_v2';
+let store = null;
+function defaultStore() {
+  return { v: 2, loadouts: [], migrated: [],
+    conditions: { temp_f: 59, humidity_pct: 0, alt_mode: 'altitude', altitude_ft: 0,
+      station_inhg: 29.92, wind_mph: 10, wind_deg: 90, powder_temp_f: null,
+      coriolis_on: false, lat_deg: 45, az_deg: 0, gust_sd: null },
+    target: { zero_yd: 100, vital_d_in: 6, max_yd: 500, step_yd: 50, range_estimated: false },
+    ui: { units: { dist: 'yd', lin: 'in', ang: 'MOA', temp: 'F' }, tab: 'traj', metric: 'dropIn', bands_on: true } };
+}
+function loadStore() {
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    if (raw) { store = JSON.parse(raw); if (store.v === 2) return; }
+  } catch (e) {}
+  store = defaultStore();
+  try { // one-time v1 migration (spec §10.5): v1 rows become library entries, not loadouts
+    const v1 = JSON.parse(localStorage.getItem('gs_ballistics') || '[]');
+    store.migrated = v1.map((l, i) => ({
+      id: 'v1-' + i, cartridge: null, brand: 'Migrated', line: 'v1', name: l.name,
+      bullet: { model: null, type: null, weight_gr: l.weight, diameter_in: null, length_in: null, min_expansion_fps: null },
+      bc: [{ model: 'G1', value: l.bc, src: 'v1 user entry' }], cdm: null,
+      mv: { fps: l.vel, test_barrel_in: null, src: 'v1 user entry' }, sd_fps: null, class: 'bulk' }));
+  } catch (e) {}
+  saveStore();
+}
+function saveStore() { try { localStorage.setItem(LS_KEY, JSON.stringify(store)); } catch (e) {} }
+
+/* ---------- data libraries ---------- */
+const DATA = { cartridges: null, loads: null, guns: null, dragmodels: null };
+async function fetchData() {
+  const files = ['cartridges', 'loads', 'guns', 'dragmodels'];
+  const errs = [];
+  await Promise.all(files.map(async f => {
+    try {
+      const r = await fetch('/data/' + f + '.json');
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const j = await r.json();
+      if (j.v !== 1) throw new Error('unsupported schema v' + j.v);
+      DATA[f] = j;
+    } catch (e) { errs.push(f + '.json (' + e.message + ')'); }
+  }));
+  if (errs.length) {
+    $('dataErr').style.display = 'block';
+    $('dataErrMsg').textContent = 'Failed to load data libraries: ' + errs.join(', ') +
+      (errs.some(e => e.startsWith('dragmodels')) ? ' — drag tables are required; solving is blocked.' : ' — custom entries still work.');
+  }
+  if (DATA.dragmodels) BX.init(DATA.dragmodels);
+  return !errs.some(e => e.startsWith('dragmodels'));
+}
+const cartById = id => (DATA.cartridges ? DATA.cartridges.cartridges.find(c => c.id === id) : null) || null;
+const loadById = id => (DATA.loads ? DATA.loads.loads.find(l => l.id === id) : null)
+  || store.migrated.find(l => l.id === id) || null;
+const gunById = id => (DATA.guns ? DATA.guns.guns.find(g => g.id === id) : null) || null;
+
+function resolveLo(lo) {
+  const gun = lo.custom_gun || gunById(lo.gun_id);
+  let load = lo.custom_load || loadById(lo.load_id);
+  if (!gun || !load) return null;
+  const cart = cartById(load.cartridge || gun.cartridge);
+  return { gun, load, cart };
+}
+function bcPick(lo, load) { // spec §10.2 preference: override > G7-if-present > G1
+  const want = lo.bc_model;
+  let entry = want ? load.bc.find(b => b.model === want) : null;
+  if (!entry) entry = load.bc.find(b => b.model === 'G7') || load.bc.find(b => b.model === 'G1') || load.bc[0];
+  return entry;
+}
+function loName(lo) {
+  const r = resolveLo(lo);
+  return r ? r.gun.name + ' · ' + (r.load.brand ? r.load.brand + ' ' : '') + r.load.name : '(broken loadout)';
+}
+
+/* ---------- worker ---------- */
+let worker = null, gen = 0, pendingSolves = 0;
+const results = {}; // loKey -> {rows, derived, muzzle, stab, mc, hit}
+function startWorker() {
+  worker = new Worker('/ballistics_worker.js');
+  worker.onmessage = e => {
+    const m = e.data;
+    if (m.type === 'error') { console.error('worker:', m.message, m.stack); setBusy(false); return; }
+    if (m.gen != null && m.gen !== gen) return; // stale
+    if (m.type === 'solved') {
+      const R = results[m.id]; if (!R) return;
+      R.rows = m.rows; R.derived = m.derived;
+      if (--pendingSolves <= 0) setBusy(false);
+      render();
+      queueMc(m.id);
+    } else if (m.type === 'mcDone') {
+      const R = results[m.id]; if (!R) return;
+      R.mc = m.mc; R.hit = m.hit;
+      render();
+    } else if (m.type === 'trued') { onTrued(m.result); }
+    else if (m.type === 'selftestDone') { renderSelftest(m.results); }
+  };
+  worker.postMessage({ type: 'init', gen, payload: { dragmodels: DATA.dragmodels } });
+}
+function setBusy(b) { $('busy').style.visibility = b ? 'visible' : 'hidden'; }
+
+/* ---------- compute pipeline ---------- */
+function conditions() { return store.conditions; }
+function target() { return store.target; }
+function buildParams(lo) {
+  const r = resolveLo(lo); if (!r) return null;
+  const cond = { temp_f: conditions().temp_f, humidity_pct: conditions().humidity_pct,
+    alt_mode: conditions().alt_mode, altitude_ft: conditions().altitude_ft,
+    station_inhg: conditions().station_inhg, powder_temp_f: conditions().powder_temp_f };
+  const muzzle = BX.muzzleState(r.gun, r.load, r.cart, cond, lo);
+  const stab = BX.stability(r.gun, r.load, r.cart, muzzle.mv, cond);
+  const bc = bcPick(lo, r.load);
+  const bcEff = bc.value * (stab.bcPenalty || 1);
+  const atm = BX.atmosphere(cond);
+  const aeroJ = stab.spinChannels ? (0.01 * stab.sgFit - 0.0024 * stab.lenCal + 0.032) : 0;
+  const t = target();
+  const params = {
+    mv: muzzle.mv, bc: bcEff, dragTable: DATA.dragmodels.models[bc.model] || DATA.dragmodels.models.G1,
+    dragModel: bc.model, weightGr: r.load.bullet.weight_gr, sightHIn: r.gun.sight_height_in || 1.5,
+    zeroYd: t.zero_yd, maxYd: t.max_yd, stepYd: t.step_yd,
+    windMph: conditions().wind_mph, windDeg: conditions().wind_deg, atm,
+    coriolis: conditions().coriolis_on ? { on: true, lat_deg: conditions().lat_deg, az_deg: conditions().az_deg } : null,
+    spin: stab.spinChannels ? { on: true, sgFit: stab.sgFit, dir: r.gun.twist_dir || 'R' } : null,
+    aeroJumpMoaPerMph: aeroJ, dt: 0.0005 };
+  return { params, muzzle, stab, r, cond };
+}
+let computeTimer = null;
+function recompute() {
+  clearTimeout(computeTimer);
+  computeTimer = setTimeout(() => {
+    gen++;
+    const t = target();
+    let n = 0;
+    for (const lo of store.loadouts) {
+      const b = buildParams(lo);
+      results[lo.id] = results[lo.id] || {};
+      const R = results[lo.id];
+      R.build = b; R.rows = null; R.mc = null; R.hit = null;
+      if (!b || (b.stab.sg != null && b.stab.state === 'unstable')) continue;
+      n++;
+      worker.postMessage({ type: 'solve', id: lo.id, gen, payload: {
+        params: b.params, vitalD: t.vital_d_in,
+        pinnedYd: lo.pinned_range_yd || defaultPin(b.r.gun),
+        minExpansionFps: b.r.load.bullet.min_expansion_fps } });
+    }
+    pendingSolves = n;
+    setBusy(n > 0);
+    render();
+  }, 150);
+}
+function queueMc(loId) {
+  const lo = store.loadouts.find(l => l.id === loId); if (!lo) return;
+  const R = results[loId]; if (!R || !R.build || !R.rows) return;
+  const b = R.build;
+  worker.postMessage({ type: 'mc', id: loId, gen, payload: {
+    params: b.params,
+    extras: { sd: b.muzzle.sd, sigmaSys: b.muzzle.sigmaSys,
+      bcTolPct: b.r.load['class'] === 'match' ? 0.02 : 0.035,
+      gustSd: conditions().gust_sd, cond: b.cond },
+    detRows: R.rows, precisionMoa: lo.precision_moa || defaultPrec(b.r.gun),
+    vitalD: target().vital_d_in, rangeEstimated: target().range_estimated,
+    N: 400, seed: 1234567 + loId.length } });
+}
+const defaultPin = gun => (gun.type === 'rifle' || gun.type === 'shotgun') ? 300 : 25;
+const defaultPrec = gun => (gun.type === 'rifle') ? 1.5 : (gun.type === 'shotgun' ? 3 : 4);
+
+/* ---------- rail rendering ---------- */
+function renderLoadouts() {
+  $('loadoutList').innerHTML = store.loadouts.map((lo, i) => {
+    const R = results[lo.id];
+    const q = R && R.build ? R.build.muzzle.quality : '';
+    return `<div class="lo"><div class="top">
+      <span class="swatch" style="background:${lo.color}"></span>
+      <span class="lname" title="${esc(loName(lo))}">${esc(loName(lo))}</span>
+      ${q ? `<span class="qchip q-${q}">${q}</span>` : ''}
+      <button class="rm" data-i="${i}" title="Remove">✕</button></div></div>`;
+  }).join('');
+  document.querySelectorAll('#loadoutList .rm').forEach(b => b.onclick = () => {
+    const lo = store.loadouts.splice(+b.dataset.i, 1)[0];
+    delete results[lo.id]; saveStore(); syncVis(); recompute();
+  });
+}
+
+/* ---------- picker (spec §12.2) ---------- */
+function openPicker() {
+  if (store.loadouts.length >= COLORS.length) { alert('Up to ' + COLORS.length + ' loadouts — remove one first.'); return; }
+  const guns = DATA.guns ? DATA.guns.guns : [];
+  const carts = DATA.cartridges ? DATA.cartridges.cartridges : [];
+  $('picker').style.display = 'block';
+  $('picker').innerHTML = `
+    <h4>1 · Gun</h4>
+    <select id="pkGun">${guns.map(g => `<option value="${g.id}">${esc(g.name)}</option>`).join('')}
+      <option value="__custom">Custom gun…</option></select>
+    <div id="pkGunC" style="display:none">
+      <div class="row2"><div><label>Type</label><select id="pgType">
+        <option>pistol</option><option>revolver</option><option>rifle</option><option>shotgun</option></select></div>
+      <div><label>Cartridge</label><select id="pgCart">${carts.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('')}</select></div></div>
+      <div class="row3"><div><label>Barrel (in)</label><input id="pgBarrel" inputmode="decimal" value="16"></div>
+        <div><label>Twist 1:<i>n</i> (blank=smooth)</label><input id="pgTwist" inputmode="decimal" value="10"></div>
+        <div><label>Twist dir</label><select id="pgDir"><option>R</option><option>L</option></select></div></div>
+      <div class="row3"><div><label>Sight ht (in)</label><input id="pgSight" inputmode="decimal" value="1.5"></div>
+        <div><label>Weight (lb)</label><input id="pgWeight" inputmode="decimal" value="7"></div>
+        <div id="pgGapWrap" style="display:none"><label>Gap loss %</label><input id="pgGap" inputmode="decimal" value="3"></div></div>
+    </div>
+    <h4 style="margin-top:10px">2 · Ammunition</h4>
+    <select id="pkLoad"></select>
+    <div id="pkLoadC" style="display:none">
+      <label>Name</label><input id="plName" placeholder="e.g. handload 168gr">
+      <div class="row3"><div><label>Bullet (gr)</label><input id="plW" inputmode="decimal"></div>
+        <div><label>MV (fps)</label><input id="plV" inputmode="numeric"></div>
+        <div><label>BC</label><input id="plBC" inputmode="decimal"></div></div>
+      <div class="row3"><div><label>BC model</label><select id="plModel"><option>G1</option><option>G7</option></select></div>
+        <div><label>Bullet len (in, opt)</label><input id="plLen" inputmode="decimal"></div>
+        <div><label>SD fps (opt)</label><input id="plSD" inputmode="numeric"></div></div>
+      <div class="row2"><div><label>Test barrel (in, opt)</label><input id="plTB" inputmode="decimal"></div>
+        <div><label>Class</label><select id="plClass"><option>bulk</option><option>match</option>
+          <option>defensive</option><option>hunting</option><option>rimfire</option></select></div></div>
+      <div class="hint">Bullet diameter is inherited from the gun's cartridge.</div>
+    </div>
+    <details class="adv" style="margin-top:8px"><summary>I chronographed this load</summary>
+      <div class="row3"><div><label>Mean fps</label><input id="pkChM" inputmode="numeric"></div>
+        <div><label>SD</label><input id="pkChSD" inputmode="numeric"></div>
+        <div><label># shots</label><input id="pkChN" inputmode="numeric"></div></div>
+      <label>Session temp (°F)</label><input id="pkChT" inputmode="decimal">
+    </details>
+    <label style="margin-top:8px">Precision — your group size (MOA)</label>
+    <input id="pkPrec" inputmode="decimal" placeholder="auto by gun type">
+    <div class="hint">typical: factory rifle 1.5 · match rifle 0.75 · pistol 4</div>
+    <div id="pkPreview"></div>
+    <div class="foot"><button id="pkAdd">Add loadout</button><button id="pkCancel">Cancel</button></div>`;
+  const fillLoads = () => {
+    const gunId = $('pkGun').value;
+    const cartId = gunId === '__custom' ? $('pgCart').value : (gunById(gunId) || {}).cartridge;
+    const lib = (DATA.loads ? DATA.loads.loads : []).filter(l => l.cartridge === cartId);
+    const groups = {};
+    lib.forEach(l => { (groups[l['class']] = groups[l['class']] || []).push(l); });
+    let html = '';
+    for (const cls of ['match', 'defensive', 'hunting', 'bulk', 'rimfire'])
+      if (groups[cls]) html += `<optgroup label="${cls}">` + groups[cls].map(l =>
+        `<option value="${l.id}">${esc(l.brand + ' ' + l.line + ' · ' + l.name + ' · ' + l.mv.fps + 'fps')}</option>`).join('') + '</optgroup>';
+    if (store.migrated.length) html += `<optgroup label="Migrated (v1)">` + store.migrated.map(l =>
+      `<option value="${l.id}">${esc(l.name + ' · ' + l.mv.fps + 'fps')}</option>`).join('') + '</optgroup>';
+    html += '<option value="__custom">Custom load…</option>';
+    $('pkLoad').innerHTML = html || '<option value="__custom">Custom load…</option>';
+    preview();
+  };
+  const preview = () => {
+    const sel = pickerSelection();
+    if (!sel) { $('pkPreview').innerHTML = ''; return; }
+    const b = buildParams(sel);
+    if (!b) { $('pkPreview').innerHTML = ''; return; }
+    const s = b.stab;
+    const sgTxt = s.smoothbore ? 'smoothbore' : s.unknown ? 'Sg n/a' :
+      'Sg ' + s.sg.toFixed(2) + (s.state !== 'stable' ? ' (' + s.state + ')' : '');
+    $('pkPreview').innerHTML = `MV est. <b>${Math.round(b.muzzle.mv)} fps ±${Math.round(b.muzzle.sigmaSys)}</b>
+      · ${sgTxt} · quality: <b>${b.muzzle.quality}</b>` +
+      (b.muzzle.flags.length ? '<br>⚠ ' + esc(b.muzzle.flags.join(' · ')) : '');
+  };
+  function pickerSelection() {
+    const gunId = $('pkGun').value;
+    let gun = null;
+    if (gunId === '__custom') {
+      const tw = parseFloat($('pgTwist').value);
+      gun = { name: 'Custom ' + $('pgType').value, type: $('pgType').value, cartridge: $('pgCart').value,
+        barrel_in: parseFloat($('pgBarrel').value) || 16, twist_in: isFinite(tw) && tw > 0 ? tw : null,
+        twist_dir: $('pgDir').value, weight_lb: parseFloat($('pgWeight').value) || 7,
+        sight_height_in: parseFloat($('pgSight').value) || 1.5,
+        gap_loss_pct: $('pgType').value === 'revolver' ? (parseFloat($('pgGap').value) || 3) : null };
+    } else gun = gunById(gunId);
+    if (!gun) return null;
+    const loadId = $('pkLoad').value;
+    let lo = { id: 'lo-' + Date.now(), color: COLORS[store.loadouts.length % COLORS.length],
+      bc_model: null, precision_moa: parseFloat($('pkPrec').value) || defaultPrec(gun),
+      pinned_range_yd: null, temp_sens_override: null, chrono: null, truing: [] };
+    if (gunId === '__custom') lo.custom_gun = gun; else lo.gun_id = gunId;
+    if (loadId === '__custom') {
+      const w = parseFloat($('plW').value), v = parseFloat($('plV').value), bc = parseFloat($('plBC').value);
+      if (!(w > 0 && v > 100 && bc > 0.01)) return null;
+      lo.custom_load = { id: 'cl-' + Date.now(), cartridge: gun.cartridge, brand: '', line: '',
+        name: $('plName').value.trim() || (w + 'gr @ ' + v + 'fps'),
+        bullet: { model: null, type: null, weight_gr: w, diameter_in: null,
+          length_in: parseFloat($('plLen').value) || null, min_expansion_fps: null },
+        bc: [{ model: $('plModel').value, value: bc, src: 'user entry' }], cdm: null,
+        mv: { fps: v, test_barrel_in: parseFloat($('plTB').value) || null, src: 'user entry' },
+        sd_fps: parseFloat($('plSD').value) || null, 'class': $('plClass').value };
+    } else {
+      const mig = store.migrated.find(l => l.id === loadId);
+      if (mig) lo.custom_load = Object.assign({}, mig, { cartridge: gun.cartridge });
+      else lo.load_id = loadId;
+    }
+    const chM = parseFloat($('pkChM').value);
+    if (chM > 100) lo.chrono = { mv: chM, sd: parseFloat($('pkChSD').value) || null,
+      n: parseInt($('pkChN').value, 10) || 1,
+      t_f: parseFloat($('pkChT').value) || conditions().temp_f };
+    return lo;
+  }
+  $('pkGun').onchange = () => {
+    $('pkGunC').style.display = $('pkGun').value === '__custom' ? 'block' : 'none';
+    fillLoads();
+  };
+  ['pgType', 'pgCart'].forEach(id => { $(id).onchange = () => {
+    $('pgGapWrap').style.display = $('pgType').value === 'revolver' ? 'block' : 'none';
+    fillLoads(); }; });
+  $('pkLoad').onchange = () => {
+    $('pkLoadC').style.display = $('pkLoad').value === '__custom' ? 'block' : 'none'; preview(); };
+  ['pgBarrel', 'pgTwist', 'plW', 'plV', 'plBC', 'pkChM', 'pkChT'].forEach(id => $(id).oninput = preview);
+  $('pkCancel').onclick = () => { $('picker').style.display = 'none'; };
+  $('pkAdd').onclick = () => {
+    const lo = pickerSelection();
+    if (!lo) { alert('Custom load needs bullet weight, velocity and BC.'); return; }
+    store.loadouts.push(lo); saveStore();
+    $('picker').style.display = 'none';
+    syncVis(); recompute();
+  };
+  fillLoads();
+}
+
+/* ---------- stat cards (spec §12.4) ---------- */
+function renderCards() {
+  $('cards').innerHTML = store.loadouts.map(lo => {
+    const R = results[lo.id];
+    if (!R || !R.build) return '';
+    const b = R.build, s = b.stab, m = b.muzzle, r = b.r;
+    const pin = lo.pinned_range_yd || defaultPin(r.gun);
+    const sgHtml = s.smoothbore ? '<span class="sgchip sg-smoothbore">smoothbore</span>'
+      : s.unknown ? '<span class="sgchip sg-unknown">Sg n/a</span>'
+      : `<span class="sgchip sg-${s.state}" title="spin ${Math.round(s.rpm).toLocaleString()} RPM · SD ${(r.load.bullet.weight_gr / 7000 / (s.d * s.d)).toFixed(3)} · bullet ${(s.lenCal * s.d).toFixed(2)}&quot;${s.lengthEstimated ? ' (est.)' : ''}${s.state === 'marginal' ? ' · BC −' + Math.round((1 - s.bcPenalty) * 100) + '%' : ''}">Sg ${s.sg.toFixed(2)}${s.state === 'unstable' ? ' UNSTABLE' : ''}</span>`;
+    const d = R.derived || {};
+    const at = R.rows ? BX.interpRow(R.rows, pin) : null;
+    const rec = BX.recoil(r.gun, r.load, r.cart, m.mv);
+    const hit90 = R.hit ? (function () {
+      let best = null;
+      for (const h of R.hit) if (h.p >= 0.9) best = h.yd;
+      return best; })() : null;
+    const bcE = bcPick(lo, r.load);
+    const rows = [
+      ['mv', 'MV', `<b title="${esc(m.flags.join(' · ') || 'σ_sys=' + Math.round(m.sigmaSys) + ' fps · shot SD=' + m.sd)}">${Math.round(m.mv)} ±${Math.round(m.sigmaSys)} fps</b>`],
+      ['bc', 'BC (' + bcE.model + ')', `<b title="${esc(bcE.src || '')}">${bcE.value}</b>`],
+      ['supersonic', 'Supersonic to', `<b>${d.supersonic12Yd > target().step_yd ? fmtDist(d.supersonic12Yd) + ' ' + distLabel()
+        : d.supersonic12Yd != null ? 'transonic at muzzle'
+        : R.rows && R.rows.length ? '>' + fmtDist(target().max_yd) + ' ' + distLabel() : '—'}</b>`],
+      ['mpbr', 'MPBR (' + target().vital_d_in + '″)', `<b>${d.mpbr && d.mpbr.mpbrYd ? fmtDist(d.mpbr.mpbrYd) + ' ' + distLabel() + ' (zero ' + fmtDist(d.mpbr.zeroYd) + ')' : '—'}</b>`],
+      ['danger', 'Danger space @' + pin, `<b>${d.danger ? fmtDist(d.danger.spanYd) + ' ' + distLabel() : '—'}</b>`],
+      ['e1000', '1,000 ft·lb to', `<b>${d.energy1000Yd ? fmtDist(d.energy1000Yd) + ' ' + distLabel() : (at && at.energy > 1000 ? '>' + fmtDist(target().max_yd) : '—')}</b>`],
+      r.load.bullet.min_expansion_fps ? ['expand', 'Expands to', `<b>${d.expansionYd ? fmtDist(d.expansionYd) + ' ' + distLabel() : '—'}</b>`] : null,
+      at ? ['drop', 'Drop @' + pin, `<b>${fmtLin(at.dropIn)} ${linLabel()} / ${toAng(at.dropIn, pin).toFixed(1)} ${angLabel()}</b>`] : null,
+      at ? ['drift', 'Drift @' + pin, `<b>${fmtLin(at.windIn)} ${linLabel()}</b>`] : null,
+      ['recoil', 'Recoil ≈', `<b title="SAAMI free-recoil, powder charge estimated ±20%">${rec.energyFtLb.toFixed(1)} ft·lb</b>`],
+      ['hit90', '90% hit range', `<b>${hit90 != null ? fmtDist(hit90) + ' ' + distLabel() : (R.mc ? '<' + fmtDist(target().step_yd) : '…')}</b>`],
+    ].filter(Boolean);
+    return `<div class="card"><div class="hd">
+      <span class="swatch" style="background:${lo.color}"></span>
+      <span class="nm" title="${esc(loName(lo))}">${esc(loName(lo))}</span>
+      <span class="qchip q-${m.quality}" data-tut="quality" title="${qualTip(m.quality)}">${m.quality}</span></div>
+      <div class="r" data-tut="sg"><span>Sg</span>${sgHtml}</div>
+      ${rows.map(x => `<div class="r" data-tut="${x[0]}"><span>${x[1]}</span>${x[2]}</div>`).join('')}
+      <div class="r" data-tut="precision"><span>Precision (MOA)</span>
+        <input class="pin" data-act="prec" data-id="${lo.id}" value="${lo.precision_moa || defaultPrec(r.gun)}"></div>
+      <div class="r" data-tut="pinned"><span>Pinned range</span>
+        <input class="pin" data-act="pin" data-id="${lo.id}" value="${pin}"></div>
+      ${s.state === 'unstable' ? '<div class="warnline">Predicted to tumble — trajectory suppressed.</div>' : ''}
+      ${m.flags.length ? `<div class="warnline">⚠ ${esc(m.flags[0])}</div>` : ''}
+    </div>`;
+  }).join('');
+  document.querySelectorAll('#cards input.pin').forEach(inp => inp.onchange = () => {
+    const lo = store.loadouts.find(l => l.id === inp.dataset.id); if (!lo) return;
+    const v = parseFloat(inp.value);
+    if (inp.dataset.act === 'prec') lo.precision_moa = v > 0 ? v : null;
+    else lo.pinned_range_yd = v > 0 ? v : null;
+    saveStore(); recompute();
+  });
+}
+function qualTip(q) {
+  return { Measured: 'Chronographed by you — the best possible input.',
+    Trued: 'Back-solved from your observed impacts.',
+    Estimated: 'Factory velocity rescaled to your barrel length via a chop-test curve (±30–50 fps). Chronograph or true to improve.',
+    Nominal: 'Factory number used as-is (±75 fps) — no chop data or unknown barrel. Chronograph or true to improve.' }[q] || '';
+}
+
+/* ---------- charts (spec §12.5) ---------- */
+let tab = 'traj';
+const MODES = {
+  traj: { label: 'drop', get: r => r.dropIn, unit: () => linLabel() },
+  wind: { label: 'windage', get: r => r.windIn, unit: () => linLabel() },
+  vel: { label: 'velocity', get: r => r.v, unit: () => 'fps' },
+  energy: { label: 'energy', get: r => r.energy, unit: () => 'ft·lb' },
+  hit: { label: 'hit probability', get: null, unit: () => '%' },
+};
+const linScale = v => U.lin === 'in' ? v : v * 2.54;
+
+function drawChart() {
+  const canvas = $('chart'), ctx = canvas.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  const cssW = canvas.clientWidth || 800, cssH = 380;
+  canvas.width = cssW * dpr; canvas.height = cssH * dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, cssW, cssH);
+  const mode = tab === 'vel' && $('veToggle').checked ? 'energy' : tab;
+  const M = MODES[mode]; if (!M) return;
+  const padL = 64, padR = 14, padT = 16, padB = 32;
+  const w = cssW - padL - padR, h = cssH - padT - padB;
+  const t = target();
+  const los = store.loadouts.filter(lo => results[lo.id] && results[lo.id].rows);
+  const bandsOn = $('bandsOn').checked && (mode === 'traj' || mode === 'wind');
+  let xMax = t.max_yd, yMin = Infinity, yMax = -Infinity;
+  const seriesOf = lo => {
+    const R = results[lo.id];
+    if (mode === 'hit') return (R.hit || []).map(p => ({ yd: p.yd, val: p.p * 100 }));
+    return R.rows.map(r => ({ yd: r.yd, val: mode === 'traj' || mode === 'wind' ? linScale(M.get(r)) : M.get(r) }));
+  };
+  for (const lo of los) {
+    for (const p of seriesOf(lo)) { yMin = Math.min(yMin, p.val); yMax = Math.max(yMax, p.val); }
+    if (bandsOn && results[lo.id].mc) for (const m of results[lo.id].mc) if (m) {
+      const a = mode === 'traj' ? [m.dropP10, m.dropP90] : [m.windP10, m.windP90];
+      yMin = Math.min(yMin, linScale(a[0])); yMax = Math.max(yMax, linScale(a[1]));
+    }
+  }
+  if (!isFinite(yMin)) { yMin = 0; yMax = 1; }
+  if (mode === 'hit') { yMin = 0; yMax = 100; }
+  if (yMin === yMax) { yMin -= 1; yMax += 1; }
+  const pad = (yMax - yMin) * 0.06; if (mode !== 'hit') { yMin -= pad; yMax += pad; }
+  const X = yd => padL + (yd / xMax) * w, Y = v => padT + (1 - (v - yMin) / (yMax - yMin)) * h;
+  const css = getComputedStyle(document.documentElement);
+  const cMuted = css.getPropertyValue('--muted').trim(), cBorder = css.getPropertyValue('--border').trim();
+  ctx.font = '11px system-ui';
+  // grid
+  const yTicks = niceTicks(yMin, yMax, 6), xTicks = niceTicks(0, xMax, 8);
+  for (const tk of yTicks) {
+    ctx.strokeStyle = cBorder; ctx.beginPath(); ctx.moveTo(padL, Y(tk)); ctx.lineTo(padL + w, Y(tk)); ctx.stroke();
+    ctx.fillStyle = cMuted; ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+    ctx.fillText(fmtTick(tk), padL - 8, Y(tk));
+  }
+  for (const tk of xTicks) {
+    if (tk < 0 || tk > xMax) continue;
+    ctx.strokeStyle = cBorder; ctx.beginPath(); ctx.moveTo(X(tk), padT); ctx.lineTo(X(tk), padT + h); ctx.stroke();
+    ctx.fillStyle = cMuted; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+    ctx.fillText(fmtDist(tk), X(tk), padT + h + 6);
+  }
+  // vital-zone window + zero line + 90% guide
+  if (mode === 'traj' && t.vital_d_in) {
+    const halfDisp = linScale(t.vital_d_in / 2);
+    if (halfDisp < yMax && -halfDisp > yMin) {
+      ctx.fillStyle = 'rgba(53,196,141,.07)';
+      ctx.fillRect(padL, Y(halfDisp), w, Y(-halfDisp) - Y(halfDisp));
+    }
+  }
+  if (mode === 'traj' || mode === 'wind') {
+    if (yMin < 0 && yMax > 0) {
+      ctx.strokeStyle = cMuted; ctx.setLineDash([4, 4]);
+      ctx.beginPath(); ctx.moveTo(padL, Y(0)); ctx.lineTo(padL + w, Y(0)); ctx.stroke(); ctx.setLineDash([]);
+    }
+    ctx.strokeStyle = cMuted; ctx.setLineDash([2, 5]);
+    ctx.beginPath(); ctx.moveTo(X(t.zero_yd), padT); ctx.lineTo(X(t.zero_yd), padT + h); ctx.stroke(); ctx.setLineDash([]);
+  }
+  if (mode === 'hit') {
+    ctx.strokeStyle = cMuted; ctx.setLineDash([4, 4]);
+    ctx.beginPath(); ctx.moveTo(padL, Y(90)); ctx.lineTo(padL + w, Y(90)); ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle = cMuted; ctx.textAlign = 'left'; ctx.fillText('90%', padL + 4, Y(90) - 8);
+  }
+  // transonic bands
+  for (const lo of los) {
+    const d = results[lo.id].derived;
+    if (d && d.supersonic12Yd && d.supersonic12Yd < xMax && mode !== 'hit') {
+      const x1 = X(d.supersonic12Yd), x2 = X(Math.min(d.subsonicYd || xMax, xMax));
+      ctx.fillStyle = hexA(lo.color, 0.05); ctx.fillRect(x1, padT, Math.max(x2 - x1, 2), h);
+    }
+  }
+  // MC bands
+  if (bandsOn) for (const lo of los) {
+    const mc = results[lo.id].mc; if (!mc) continue;
+    ctx.fillStyle = hexA(lo.color, 0.16); ctx.beginPath();
+    let started = false;
+    for (const m of mc) { if (!m) continue;
+      const v = linScale(mode === 'traj' ? m.dropP90 : m.windP90);
+      if (!started) { ctx.moveTo(X(m.yd), Y(v)); started = true; } else ctx.lineTo(X(m.yd), Y(v)); }
+    for (let i = mc.length - 1; i >= 0; i--) { const m = mc[i]; if (!m) continue;
+      ctx.lineTo(X(m.yd), Y(linScale(mode === 'traj' ? m.dropP10 : m.windP10))); }
+    ctx.closePath(); ctx.fill();
+  }
+  // series lines
+  for (const lo of los) {
+    ctx.strokeStyle = lo.color; ctx.lineWidth = 2; ctx.beginPath();
+    seriesOf(lo).forEach((p, i) => { i ? ctx.lineTo(X(p.yd), Y(p.val)) : ctx.moveTo(X(p.yd), Y(p.val)); });
+    ctx.stroke();
+    // energy threshold tick
+    if (mode === 'energy') {
+      const d = results[lo.id].derived;
+      if (d && d.energy1000Yd && d.energy1000Yd <= xMax) {
+        ctx.strokeStyle = lo.color; ctx.beginPath();
+        ctx.moveTo(X(d.energy1000Yd), Y(1000) - 8); ctx.lineTo(X(d.energy1000Yd), Y(1000) + 8); ctx.stroke();
+      }
+    }
+  }
+  // axis titles
+  ctx.fillStyle = cMuted; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+  ctx.fillText('range (' + distLabel() + ')', padL + w / 2, cssH - 2);
+  ctx.save(); ctx.translate(12, padT + h / 2); ctx.rotate(-Math.PI / 2);
+  ctx.fillText(M.label + ' (' + M.unit() + ')', 0, 0); ctx.restore();
+  chartGeom = { X, Y, padL, padT, w, h, xMax, mode };
+  $('legend').innerHTML = los.map(lo =>
+    `<span><i style="background:${lo.color}"></i>${esc(loName(lo))}</span>`).join('');
+}
+let chartGeom = null;
+function hexA(hex, a) {
+  const n = parseInt(hex.slice(1), 16);
+  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
+}
+function niceTicks(min, max, n) {
+  const span = max - min, step0 = span / n;
+  const mag = Math.pow(10, Math.floor(Math.log10(Math.abs(step0) || 1)));
+  const step = [1, 2, 2.5, 5, 10].map(m => m * mag).find(s => span / s <= n) || 10 * mag;
+  const ticks = [];
+  for (let t = Math.ceil(min / step) * step; t <= max + 1e-9; t += step) ticks.push(t);
+  return ticks;
+}
+const fmtTick = v => Math.abs(v) >= 1000 ? (v / 1000).toFixed(1).replace(/\.0$/, '') + 'k'
+  : Math.abs(v) < 10 && v !== Math.round(v) ? v.toFixed(1) : Math.round(v).toString();
+
+/* hover crosshair */
+$('chart').addEventListener('mousemove', e => {
+  if (!chartGeom) return;
+  const rect = $('chart').getBoundingClientRect();
+  const px = e.clientX - rect.left;
+  if (px < chartGeom.padL || px > chartGeom.padL + chartGeom.w) { $('tip').style.display = 'none'; return; }
+  const yd = (px - chartGeom.padL) / chartGeom.w * chartGeom.xMax;
+  const mode = chartGeom.mode;
+  let html = `<div class="t">${fmtDist(yd)} ${distLabel()}</div>`;
+  for (const lo of store.loadouts) {
+    const R = results[lo.id]; if (!R || !R.rows) continue;
+    if (mode === 'hit') {
+      if (!R.hit) continue;
+      let best = R.hit[0];
+      for (const hp of R.hit) if (Math.abs(hp.yd - yd) < Math.abs(best.yd - yd)) best = hp;
+      html += `<div class="l"><i style="background:${lo.color}"></i><b>${(best.p * 100).toFixed(0)}%</b></div>`;
+      continue;
+    }
+    const r = BX.interpRow(R.rows, yd); if (!r) continue;
+    let val, extra = '';
+    if (mode === 'traj') { val = fmtLin(r.dropIn) + ' ' + linLabel() + ' / ' + toAng(r.dropIn, yd).toFixed(1) + ' ' + angLabel();
+      if (Math.abs(r.jumpIn) > 0.05) extra = `<small>incl. aero jump ${r.jumpIn.toFixed(1)}″</small>`; }
+    else if (mode === 'wind') { val = fmtLin(r.windIn) + ' ' + linLabel();
+      extra = `<small>lag ${r.lagIn.toFixed(1)}″${Math.abs(r.spinIn) > 0.05 ? ' · spin ' + r.spinIn.toFixed(1) + '″' : ''}</small>`; }
+    else if (mode === 'vel') val = Math.round(r.v) + ' fps · M' + r.mach.toFixed(2);
+    else val = Math.round(r.energy).toLocaleString() + ' ft·lb';
+    html += `<div class="l"><i style="background:${lo.color}"></i><b>${val}</b></div>${extra ? '<div class="l" style="margin-left:16px">' + extra + '</div>' : ''}`;
+  }
+  const tip = $('tip');
+  tip.innerHTML = html; tip.style.display = 'block';
+  const wrapRect = $('chartWrap').getBoundingClientRect();
+  let lx = e.clientX - wrapRect.left + 14;
+  if (lx + 190 > wrapRect.width) lx -= 210;
+  tip.style.left = lx + 'px'; tip.style.top = (e.clientY - wrapRect.top + 8) + 'px';
+});
+$('chart').addEventListener('mouseleave', () => { $('tip').style.display = 'none'; });
+
+/* ---------- table + exports (spec §12.6) ---------- */
+function renderTable() {
+  const t = target();
+  const los = store.loadouts.filter(lo => results[lo.id] && results[lo.id].rows);
+  if (!los.length) { $('bt').querySelector('thead').innerHTML = ''; $('bt').querySelector('tbody').innerHTML = ''; return; }
+  fillLoSelect($('allColsLo')); fillLoSelect($('dopeLo'));
+  const bandsOn = $('bandsOn').checked;
+  if ($('allCols').checked) {
+    const lo = store.loadouts.find(l => l.id === $('allColsLo').value) || los[0];
+    const R = results[lo.id];
+    let head = `<tr><th>Range (${distLabel()})</th><th>Drop (${linLabel()})</th><th>Drop (${angLabel()})</th>
+      <th>Wind (${linLabel()})</th><th>Wind (${angLabel()})</th><th>Vel (fps)</th><th>Mach</th>
+      <th>Energy</th><th>TOF (s)</th><th>P(hit)</th></tr>`;
+    let body = '';
+    R.rows.forEach((r, i) => {
+      const hit = R.hit && R.hit[i] ? (R.hit[i].p * 100).toFixed(0) + '%' : '—';
+      body += `<tr><td${Math.abs(r.yd - t.zero_yd) < 1e-6 ? ' class="zero"' : ''}>${fmtDist(r.yd)}</td>
+        <td>${fmtLin(r.dropIn)}</td><td>${toAng(r.dropIn, r.yd).toFixed(2)}</td>
+        <td>${fmtLin(r.windIn)}</td><td>${toAng(r.windIn, r.yd).toFixed(2)}</td>
+        <td>${Math.round(r.v)}</td><td>${r.mach.toFixed(2)}</td>
+        <td>${Math.round(r.energy).toLocaleString()}</td><td>${r.tof.toFixed(3)}</td><td>${hit}</td></tr>`;
+    });
+    $('bt').querySelector('thead').innerHTML = head;
+    $('bt').querySelector('tbody').innerHTML = body;
+    return;
+  }
+  const metric = $('metricSel').value;
+  const fmt = (lo, r, i) => {
+    const R = results[lo.id];
+    switch (metric) {
+      case 'dropIn': {
+        let pm = '';
+        if (bandsOn && R.mc && R.mc[i]) pm = ` <span class="pm">±${fmtLin((R.mc[i].dropP90 - R.mc[i].dropP10) / 2)}</span>`;
+        return fmtLin(r.dropIn) + pm; }
+      case 'dropAng': return toAng(r.dropIn, r.yd).toFixed(2);
+      case 'windIn': {
+        let pm = '';
+        if (bandsOn && R.mc && R.mc[i]) pm = ` <span class="pm">±${fmtLin((R.mc[i].windP90 - R.mc[i].windP10) / 2)}</span>`;
+        return fmtLin(r.windIn) + pm; }
+      case 'windAng': return toAng(r.windIn, r.yd).toFixed(2);
+      case 'v': return Math.round(r.v);
+      case 'energy': return Math.round(r.energy).toLocaleString();
+      case 'mach': return r.mach.toFixed(2);
+      case 'tof': return r.tof.toFixed(3);
+      case 'phit': return R.hit && R.hit[i] ? (R.hit[i].p * 100).toFixed(0) + '%' : '—';
+    }
+  };
+  let head = `<tr><th>Range (${distLabel()})</th>` + los.map(lo =>
+    `<th style="color:${lo.color}">${esc(loName(lo))}</th>`).join('') + '</tr>';
+  const n = Math.max(...los.map(lo => results[lo.id].rows.length));
+  let body = '';
+  for (let i = 0; i < n; i++) {
+    const yd = i * t.step_yd;
+    body += `<tr><td${Math.abs(yd - t.zero_yd) < 1e-6 ? ' class="zero" title="zero"' : ''}>${fmtDist(yd)}</td>` +
+      los.map(lo => {
+        const r = results[lo.id].rows[i];
+        return `<td>${r ? fmt(lo, r, i) : '<span style="color:var(--muted)">—</span>'}</td>`;
+      }).join('') + '</tr>';
+  }
+  $('bt').querySelector('thead').innerHTML = head;
+  $('bt').querySelector('tbody').innerHTML = body;
+}
+function fillLoSelect(sel) {
+  const cur = sel.value;
+  sel.innerHTML = store.loadouts.map(lo => `<option value="${lo.id}">${esc(loName(lo))}</option>`).join('');
+  if ([...sel.options].some(o => o.value === cur)) sel.value = cur;
+}
+$('csvBtn').onclick = () => {
+  const lines = ['loadout,range_yd,drop_in,drop_' + angLabel().toLowerCase() + ',wind_in,wind_' + angLabel().toLowerCase() + ',velocity_fps,mach,energy_ftlb,tof_s,p_hit'];
+  for (const lo of store.loadouts) {
+    const R = results[lo.id]; if (!R || !R.rows) continue;
+    R.rows.forEach((r, i) => {
+      lines.push([JSON.stringify(loName(lo)), r.yd, r.dropIn.toFixed(2), toAng(r.dropIn, r.yd).toFixed(2),
+        r.windIn.toFixed(2), toAng(r.windIn, r.yd).toFixed(2), Math.round(r.v), r.mach.toFixed(3),
+        Math.round(r.energy), r.tof.toFixed(4), R.hit && R.hit[i] ? R.hit[i].p.toFixed(3) : ''].join(','));
+    });
+  }
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([lines.join('\n')], { type: 'text/csv' }));
+  a.download = 'gun_scout_ballistics.csv'; a.click(); URL.revokeObjectURL(a.href);
+};
+$('dopeBtn').onclick = () => {
+  const lo = store.loadouts.find(l => l.id === $('dopeLo').value) || store.loadouts[0];
+  if (!lo) return;
+  const R = results[lo.id]; if (!R || !R.rows) return;
+  const b = R.build, t = target(), c = conditions();
+  $('dope').innerHTML = `<h2>DOPE — ${esc(loName(lo))}</h2>
+    <p>MV ${Math.round(b.muzzle.mv)} fps (${b.muzzle.quality}) · BC ${bcPick(lo, b.r.load).value} ${bcPick(lo, b.r.load).model}
+     · zero ${t.zero_yd} yd · sight ${b.params.sightHIn}″</p>
+    <p>${c.temp_f}°F · DA ${Math.round(BX.atmosphere(c).da)} ft · wind ${c.wind_mph} mph from ${c.wind_deg}° · ${new Date().toLocaleDateString()}</p>
+    <table><tr><th>yd</th><th>drop ${angLabel()}</th><th>wind ${angLabel()}</th><th>vel</th></tr>` +
+    R.rows.map(r => `<tr><td>${Math.round(r.yd)}</td><td>${toAng(r.dropIn, r.yd).toFixed(1)}</td>
+      <td>${toAng(r.windIn, r.yd).toFixed(1)}</td><td>${Math.round(r.v)}</td></tr>`).join('') + '</table>';
+  window.print();
+};
+
+/* ---------- truing tab (spec §12.9 / §9) ---------- */
+let truingPending = null;
+function renderTruing() {
+  fillLoSelect($('trLo'));
+  const c = conditions();
+  $('trCond').textContent = `${c.temp_f}°F · DA ${Math.round(BX.atmosphere(c).da)} ft · wind ${c.wind_mph} mph`;
+  const lo = store.loadouts.find(l => l.id === $('trLo').value);
+  $('trList').innerHTML = !lo || !lo.truing.length ? '<div class="hint">none yet</div>'
+    : lo.truing.map((s, i) => {
+      const stale = Math.abs((s.conditions.temp_f ?? 59) - c.temp_f) > 25 ||
+        Math.abs((s.conditions.da_ft ?? 0) - BX.atmosphere(c).da) > 2000;
+      return `<div class="sess"><span>${new Date(s.date).toLocaleDateString()}</span>
+        <span>MV → <b>${Math.round(s.solved.mv_fps)}</b>${s.solved.bc_scale ? ' · BC ×' + s.solved.bc_scale.toFixed(3) : ''}</span>
+        ${stale ? '<span class="stale">⚠ stale (conditions changed)</span>' : ''}
+        <span class="del" data-i="${i}" title="delete">✕</span></div>`;
+    }).join('');
+  document.querySelectorAll('#trList .del').forEach(d => d.onclick = () => {
+    lo.truing.splice(+d.dataset.i, 1); saveStore(); renderTruing(); recompute();
+  });
+}
+$('trSolve').onclick = () => {
+  const lo = store.loadouts.find(l => l.id === $('trLo').value);
+  if (!lo) return;
+  const R = results[lo.id];
+  if (!R || !R.build) return;
+  const range = parseFloat($('trRange').value), drop = parseFloat($('trDrop').value);
+  if (!(range > 0) || !isFinite(drop)) { $('trResult').innerHTML = '<span style="color:var(--err)">Need a range and an observed POI.</span>'; return; }
+  const obs = [{ range_yd: range, observed_drop_in: drop, group_moa: parseFloat($('trGroup').value) || null }];
+  truingPending = { lo, obs };
+  $('trResult').textContent = 'Solving…';
+  worker.postMessage({ type: 'trueMv', id: lo.id, gen, payload: { params: R.build.params, observations: obs, tryBc: true } });
+};
+function onTrued(res) {
+  if (!truingPending) return;
+  const { lo, obs } = truingPending;
+  if (!res.ok) { $('trResult').innerHTML = `<span style="color:var(--warn)">${esc(res.reason)}</span>`; truingPending = null; return; }
+  const before = results[lo.id].build.muzzle;
+  $('trResult').innerHTML = `MV ${Math.round(before.mv)} → <b>${Math.round(res.mv)} fps</b>
+    (±${Math.round(res.rmsFps)})${res.bcScale ? ` · BC ×${res.bcScale.toFixed(3)}` : ''}
+    <button id="trSave" style="margin-left:10px">Save truing</button>` +
+    (obs[0].group_moa ? ` <button id="trPrec">Set precision ${obs[0].group_moa} MOA</button>` : '');
+  $('trSave').onclick = () => {
+    const c = conditions();
+    lo.truing.push({ date: Date.now(), observations: obs,
+      conditions: { temp_f: c.temp_f, da_ft: BX.atmosphere(c).da, pressure_inhg: BX.atmosphere(c).pressure, wind_mph: c.wind_mph },
+      solved: { mv_fps: res.mv, bc_scale: res.bcScale || null, rms_fps: res.rmsFps } });
+    lo.chrono = null; // truing supersedes; tier-2
+    saveStore(); $('trResult').innerHTML = 'Saved — loadout is now <b>Trued</b>; bands tightened.';
+    renderTruing(); recompute();
+  };
+  const tp = $('trPrec');
+  if (tp) tp.onclick = () => { lo.precision_moa = obs[0].group_moa; saveStore(); recompute(); };
+  truingPending = null;
+}
+
+/* ---------- tabs / visibility / render ---------- */
+function syncVis() {
+  const has = store.loadouts.length > 0;
+  $('empty').style.display = has ? 'none' : '';
+  $('viz').style.display = has ? '' : 'none';
+  renderLoadouts();
+}
+function render() {
+  renderLoadouts(); renderCards();
+  const showChart = ['traj', 'wind', 'vel', 'hit'].includes(tab);
+  $('chartWrap').style.display = showChart ? '' : 'none';
+  $('tableArea').style.display = tab === 'table' ? '' : 'none';
+  $('truing').style.display = tab === 'truing' ? '' : 'none';
+  $('veToggleWrap').style.display = tab === 'vel' ? '' : 'none';
+  if (showChart) drawChart();
+  if (tab === 'table') renderTable();
+  if (tab === 'truing') renderTruing();
+}
+document.querySelectorAll('#tabs button').forEach(b => b.onclick = () => {
+  tab = b.dataset.tab;
+  document.querySelectorAll('#tabs button').forEach(x => x.classList.toggle('active', x === b));
+  store.ui.tab = tab; saveStore(); render();
+});
+$('bandsOn').onchange = () => { store.ui.bands_on = $('bandsOn').checked; saveStore(); render(); };
+$('veToggle').onchange = render;
+$('metricSel').onchange = () => { store.ui.metric = $('metricSel').value; saveStore(); renderTable(); };
+$('allCols').onchange = renderTable; $('allColsLo').onchange = renderTable;
+$('trLo') && ($('trLo').onchange = renderTruing);
+window.addEventListener('resize', () => { if (store.loadouts.length) drawChart(); });
+
+/* ---------- rail wiring ---------- */
+function readRail() {
+  const c = store.conditions, t = store.target;
+  c.temp_f = readTemp(parseFloat($('cTemp').value)) || 59;
+  c.humidity_pct = parseFloat($('cRH').value) || 0;
+  c.alt_mode = $('cAltMode').value;
+  const av = parseFloat($('cAltVal').value);
+  if (c.alt_mode === 'altitude') c.altitude_ft = isFinite(av) ? av : 0;
+  else c.station_inhg = isFinite(av) ? av : 29.92;
+  c.wind_mph = parseFloat($('cWind').value) || 0;
+  c.wind_deg = parseFloat($('cWindDir').value) || 0;
+  const pt = parseFloat($('cPowderT').value);
+  c.powder_temp_f = isFinite(pt) ? readTemp(pt) : null;
+  c.coriolis_on = $('cCorOn').checked;
+  c.lat_deg = parseFloat($('cLat').value) || 45;
+  c.az_deg = parseFloat($('cAz').value) || 0;
+  const gs = parseFloat($('cGust').value);
+  c.gust_sd = isFinite(gs) ? gs : null;
+  t.zero_yd = Math.max(10, parseFloat($('tZero').value) || 100);
+  t.vital_d_in = Math.max(1, parseFloat($('tVital').value) || 6);
+  t.max_yd = Math.min(2000, Math.max(50, parseFloat($('tMax').value) || 500));
+  t.step_yd = Math.max(5, parseFloat($('tStep').value) || 50);
+  t.range_estimated = $('tRangeEst').checked;
+  $('cDA').textContent = Math.round(BX.atmosphere(c).da).toLocaleString() + ' ft';
+  saveStore(); recompute();
+}
+function writeRail() {
+  const c = store.conditions, t = store.target;
+  $('cTemp').value = +dispTemp(c.temp_f).toFixed(1);
+  $('cRH').value = c.humidity_pct;
+  $('cAltMode').value = c.alt_mode;
+  $('cAltVal').value = c.alt_mode === 'altitude' ? c.altitude_ft : c.station_inhg;
+  $('cWind').value = c.wind_mph;
+  $('cWindDir').innerHTML = CLOCKS.map(x => `<option value="${x[0]}">${x[1]}</option>`).join('');
+  $('cWindDir').value = String(c.wind_deg);
+  $('cPowderT').value = c.powder_temp_f != null ? +dispTemp(c.powder_temp_f).toFixed(1) : '';
+  $('cCorOn').checked = c.coriolis_on; $('cLat').value = c.lat_deg; $('cAz').value = c.az_deg;
+  $('cGust').value = c.gust_sd != null ? c.gust_sd : '';
+  $('tZero').value = t.zero_yd; $('tVital').value = t.vital_d_in;
+  $('tMax').value = t.max_yd; $('tStep').value = t.step_yd;
+  $('tRangeEst').checked = t.range_estimated;
+  $('cDA').textContent = Math.round(BX.atmosphere(c).da).toLocaleString() + ' ft';
+}
+['cTemp','cRH','cAltMode','cAltVal','cWind','cWindDir','cPowderT','cCorOn','cLat','cAz','cGust',
+ 'tZero','tVital','tMax','tStep','tRangeEst'].forEach(id => { $(id).onchange = readRail; });
+document.querySelectorAll('.rst').forEach(r => r.onclick = () => {
+  const d = defaultStore();
+  if (r.dataset.rst === 'cond') store.conditions = d.conditions; else store.target = d.target;
+  writeRail(); saveStore(); recompute();
+});
+
+/* units toggles */
+function syncUnitButtons() {
+  $('uDist').textContent = U.dist; $('uLin').textContent = U.lin;
+  $('uAng').textContent = U.ang; $('uTemp').textContent = '°' + U.temp;
+  document.querySelectorAll('.dU').forEach(e => e.textContent = 'yd');
+  document.querySelectorAll('.tU').forEach(e => e.textContent = '°' + U.temp);
+}
+$('uDist').onclick = () => { U.dist = U.dist === 'yd' ? 'm' : 'yd'; unitsChanged(); };
+$('uLin').onclick = () => { U.lin = U.lin === 'in' ? 'cm' : 'in'; unitsChanged(); };
+$('uAng').onclick = () => { U.ang = U.ang === 'MOA' ? 'mil' : 'MOA'; unitsChanged(); };
+$('uTemp').onclick = () => { U.temp = U.temp === 'F' ? 'C' : 'F'; unitsChanged(); };
+function unitsChanged() {
+  store.ui.units = Object.assign({}, U); saveStore();
+  syncUnitButtons(); writeRail(); render();
+}
+
+/* demo loadouts */
+document.querySelectorAll('#empty button[data-demo]').forEach(b => b.onclick = () => {
+  const demos = [
+    { gun_id: 'glock-19', load_id: 'fed-ae-9mm-124' },
+    { gun_id: 'ar15-16', load_id: 'fed-xm855' }];
+  const d = demos[+b.dataset.demo];
+  if (!gunById(d.gun_id) || !loadById(d.load_id)) return;
+  store.loadouts.push(Object.assign({ id: 'lo-' + Date.now() + Math.random().toString(36).slice(2, 5),
+    color: COLORS[store.loadouts.length % COLORS.length], bc_model: null,
+    precision_moa: null, pinned_range_yd: null, temp_sens_override: null, chrono: null, truing: [] }, d));
+  saveStore(); syncVis(); recompute();
+});
+$('addLoBtn').onclick = openPicker;
+
+/* ---------- selftest (spec §11 item 8) ---------- */
+function renderSelftest(res) {
+  $('selftest').innerHTML = '<h2>Self test</h2><table><tr><th>check</th><th>got</th><th>want</th><th></th></tr>' +
+    res.map(r => `<tr><td style="text-align:left">${esc(r.name)}</td><td>${(+r.got).toFixed(4)}</td>
+      <td>${(+r.want).toFixed(4)}</td><td class="${r.pass ? 'pass' : 'fail'}">${r.pass ? 'PASS' : 'FAIL'}</td></tr>`).join('') + '</table>';
+}
+
+/* ---------- guided tutorial ---------- */
+(function () {
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const setTab = n => { const b = document.querySelector('#tabs button[data-tab="' + n + '"]'); if (b) b.click(); };
+  const card = key => '#cards .card' + (key ? ' [data-tut="' + key + '"]' : '');
+
+  // Each step: {sel (string|fn|null), title, body, place?, before?}
+  const steps = [
+    { sel: null, title: 'Welcome to the ballistics simulator',
+      body: `This page simulates a <b>specific gun firing a specific cartridge</b> — computing drop, drift, speed, energy, stability and hit probability, with honest uncertainty.<br><br>
+      We'll walk through <b>every control and every abbreviation</b>, one at a time. Everything but the item being explained is dimmed. Use <b>Next / Back</b> (or the ← → arrow keys), and press <b>Esc</b> to leave anytime.` },
+
+    { sel: '#unitBar', title: 'Unit toggles', place: 'below',
+      body: `These four buttons flip the <b>entire page</b> between measurement systems: range (<span class="term">yd</span>↔<span class="term">m</span>), drop &amp; drift (in↔cm), angle (<span class="term">MOA</span>↔<span class="term">mil</span>), and temperature (°F↔°C).<br><br>
+      <span class="term">MOA</span> = <b>minute of angle</b> ≈ 1 inch per 100 yards. A <span class="term">mil</span> (milliradian) ≈ 3.6 inches per 100 yards. Scopes adjust in one or the other — pick whichever matches yours.` },
+
+    { sel: '#grpLoadouts', title: 'Loadouts = gun + ammo',
+      body: `A <b>loadout</b> is one gun paired with one ammunition load — the exact thing being simulated. The same ammo in two different barrels is <b>two</b> loadouts.<br><br>
+      You can compare up to <b>six</b> at once; each gets a color used consistently across every chart and table.` },
+
+    { sel: '#addLoBtn', title: 'Building a loadout',
+      body: `Click here to add one: first pick a <b>gun</b>, then a matching <b>ammo</b> load for that cartridge.<br><br>
+      You can enter a fully <b>custom</b> gun or handload, and — if you've measured your load over a chronograph — type in the real velocity for the most accurate possible result.` },
+
+    { sel: '#grpCond', title: 'Conditions — the air',
+      body: `Air resistance is what slows a bullet, so the atmosphere shapes the whole flight. These conditions are <b>shared by every loadout</b>, so comparisons stay fair.` },
+
+    { sel: '#cTemp', title: 'Temperature',
+      body: `Warmer air is <b>thinner</b> — less drag, so the bullet flies flatter and drifts less. Temperature also changes how energetically the gunpowder burns, nudging muzzle velocity.` },
+
+    { sel: '#cRH', title: 'Humidity',
+      body: `Humid air is actually slightly <b>less</b> dense than dry air (water vapor is lighter than the nitrogen it displaces). It's a small effect, included here for completeness.` },
+
+    { sel: '#cAltRow', title: 'Altitude / pressure',
+      body: `Set your elevation above sea level, or switch to enter barometric <b>station pressure</b> directly. Higher up = thinner air = noticeably less drop and drift at distance. This is why the same rifle shoots flatter in Denver than at the coast.` },
+
+    { sel: '#cDA', title: 'Density altitude (DA)',
+      body: `<span class="term">DA</span> = <b>Density Altitude</b> — the one number that rolls temperature, pressure and humidity together into "how thin is the air, really?"<br><br>
+      A hot day at 5,000 ft can feel like <b>8,000 ft</b> to the bullet. Long-range shooters track DA because it, not raw elevation, is what actually bends the trajectory.` },
+
+    { sel: '#cWind', title: 'Wind speed',
+      body: `Crosswind is the hardest thing to read in the field and a major source of misses. Enter the speed in mph here; direction is set next door.` },
+
+    { sel: '#cWindDir', title: 'Wind direction — the clock',
+      body: `Wind is named by a <b>clock face</b> laid over your line to the target: <b>12 o'clock</b> blows straight into your face, <b>3 o'clock</b> comes from your right, <b>6</b> from behind.<br><br>
+      A pure <b>3 or 9 o'clock</b> wind pushes the bullet sideways the most; a 12 or 6 mostly just speeds or slows it.` },
+
+    { sel: '#grpCond details.adv', title: 'Powder temp & advanced', place: 'right',
+      body: `Open this drawer for a separate <b>powder temperature</b> (if the ammo sat in a hot truck while the air is cool), plus long-range effects: <b>Coriolis</b> (the Earth rotating beneath a bullet in flight for 1,000+ yards), your latitude and facing, and how gusty the wind is.` },
+
+    { sel: '#grpTarget', title: 'Target — the shot',
+      body: `These describe the shot you're setting up: where the rifle is zeroed, how big the target is, and how far out you want the numbers.` },
+
+    { sel: '#tZero', title: 'Zero range',
+      body: `Your <b>zero</b> is the distance at which the line of sight and the bullet's arcing path cross — where the gun is dead-on. Every drop number on this page is measured <b>relative to this</b>: change it and the whole curve shifts.` },
+
+    { sel: '#tVital', title: 'Vital zone Ø',
+      body: `The diameter of your target / kill zone (default <b>6 inches</b> ≈ a deer's vitals). It's the size of circle used for <b>Maximum Point-Blank Range</b> and for the hit-probability math further down.` },
+
+    { sel: '#tRangeRow', title: 'Max range & step',
+      body: `<b>Max range</b> is how far out to compute; <b>step</b> is the spacing between rows in the data table (every 50 yards, 100, etc.). Smaller steps = more detailed table.` },
+
+    { sel: '#tRangeEst', title: 'Range is estimated',
+      body: `Tick this if you judge distance <b>by eye</b> rather than with a laser rangefinder. The simulator then folds realistic range-<b>guessing</b> error into the hit-probability bands — because misjudging distance is often a bigger miss than wind.` },
+
+    { sel: '#cards', title: 'The stat cards', place: 'below',
+      body: `Every loadout gets a card — the headline numbers, so you can compare at a glance without reading curves. Let's decode <b>every line</b> on the first card, starting with the badge in its corner.` },
+
+    { sel: card('quality'), title: 'Quality badge', place: 'right',
+      body: `How trustworthy the muzzle velocity is, worst→best: <b>Nominal</b> (factory number as-is) → <b>Estimated</b> (that number rescaled to your barrel length) → <b>Trued</b> (back-solved from your own impacts) → <b>Measured</b> (you chronographed it).<br><br>
+      A better tier means <b>tighter</b> uncertainty bands.` },
+
+    { sel: card('sg'), title: 'Sg — stability', place: 'right',
+      body: `<span class="term">Sg</span> = <b>gyroscopic Stability factor</b>. Rifling spins the bullet like a thrown football; Sg says whether that spin is enough to keep it flying point-first.<br><br>
+      <b>≥ 1.5</b> = solid; <b>1.0–1.5</b> = marginal (flies slightly less efficiently); <b>below 1.0</b> = it tumbles, and we suppress the trajectory as meaningless.` },
+
+    { sel: card('mv'), title: 'MV — muzzle velocity', place: 'right',
+      body: `<span class="term">MV</span> = <b>Muzzle Velocity</b> in <span class="term">fps</span> (feet per second) — the speed leaving the barrel, and the single biggest driver of trajectory.<br><br>
+      The <b>±</b> is our honest uncertainty: shot-to-shot spread plus how confident we are in the average for your barrel.` },
+
+    { sel: card('bc'), title: 'BC — ballistic coefficient', place: 'right',
+      body: `<span class="term">BC</span> = <b>Ballistic Coefficient</b>: how well the bullet slips through air. Higher = less drag = flatter and less wind drift.<br><br>
+      <span class="term">G1</span> and <span class="term">G7</span> are two <b>reference bullet shapes</b> the BC is measured against — G7 fits modern long, pointed match bullets; G1 fits shorter, blunter ones. Same bullet, two numbering scales.` },
+
+    { sel: card('supersonic'), title: 'Supersonic range', place: 'right',
+      body: `How far the bullet stays <b>faster than sound</b> (~1,116 fps). Crossing back through the sound barrier — the "<b>transonic</b>" zone — buffets the bullet and destabilizes it, so this is a practical accuracy limit. (A pistol round shows "transonic at muzzle" — it's barely supersonic to begin with.)` },
+
+    { sel: card('mpbr'), title: 'MPBR', place: 'right',
+      body: `<span class="term">MPBR</span> = <b>Maximum Point-Blank Range</b>: the farthest you can hold <b>dead center</b> and still hit the vital zone, without dialing or holding over, using an optimal zero.<br><br>
+      Bigger MPBR = a more forgiving cartridge. The zero that achieves it is shown in parentheses.` },
+
+    { sel: card('danger'), title: 'Danger space', place: 'right',
+      body: `How much <b>range-estimation error you can get away with</b>: the span around your aim point where a center hold still lands inside the vital zone. Flat, fast cartridges have deeper danger space — they punish a misjudged distance less.` },
+
+    { sel: card('e1000'), title: 'Energy threshold', place: 'right',
+      body: `Where the bullet's <b>energy</b> falls below 1,000 <span class="term">ft·lb</span> (foot-pounds) — a common rule-of-thumb minimum for ethically taking deer-sized game. Foot-pounds measure raw hitting power; it bleeds off with speed downrange.` },
+
+    { sel: card('drop'), title: 'Drop at your range', place: 'right',
+      body: `How far the bullet has fallen <b>below the line of sight</b> at the card's pinned range, shown both in inches/cm and in scope clicks (<span class="term">MOA</span>/<span class="term">mil</span>). Negative means below your aim — you'd hold or dial up to compensate.` },
+
+    { sel: card('drift'), title: 'Wind drift', place: 'right',
+      body: `How far the crosswind (plus, for rifles, a little <b>spin drift</b>) has pushed the bullet sideways at that range. This is the number that most separates a hit from a miss at distance.` },
+
+    { sel: card('recoil'), title: 'Recoil', place: 'right',
+      body: `An estimate of how hard the gun <b>kicks</b> (free-recoil energy, in ft·lb), so you can compare felt punch between loads. The powder charge is estimated, so it's marked ≈ — good for comparison, not a lab figure.` },
+
+    { sel: card('hit90'), title: '90% hit range', place: 'right',
+      body: `The farthest distance where the simulator predicts at least a <b>90% chance of a first-round hit</b> on your vital-zone circle — combining wind, velocity spread <b>and</b> your rifle's precision. This is the bottom-line "how far can I reliably connect" number.` },
+
+    { sel: card('precision'), title: 'Precision — your group size', place: 'right',
+      body: `Enter what your gun-and-you actually shoot: a <b>group size in MOA</b> (factory rifle ≈ 1.5, match ≈ 0.75, pistol ≈ 4). This calibrates the hit-probability prediction to <b>you</b>, not an ideal shooter. Edit it right here on the card.` },
+
+    { sel: card('pinned'), title: 'Pinned range', place: 'right',
+      body: `The distance the card's <b>Drop</b>, <b>Drift</b> and <b>Danger space</b> lines report on. Change it to interrogate whatever range you care about — 200, 437, wherever.` },
+
+    { sel: '#tabs', title: 'The six views', place: 'below',
+      body: `The same loadouts, seen six ways. We'll glance at each one.` },
+
+    { sel: '#chartWrap', title: 'Trajectory chart', before: () => setTab('traj'),
+      body: `The <b>drop curves</b>. The faint green band is the vital zone around your line of sight; the dashed vertical line is your zero.<br><br>
+      <b>Hover anywhere</b> on the chart to read exact numbers for every loadout at that range — a moving crosshair with a readout.` },
+
+    { sel: '#bandsOn', title: 'Show spread', place: 'below', before: () => setTab('traj'),
+      body: `Toggles the shaded <b>uncertainty bands</b>. Each band is the 10th-to-90th-percentile spread from a <b>400-shot Monte Carlo</b> simulation that randomly samples velocity spread, wind gusts and BC tolerance.<br><br>
+      The line is the most likely path; the band is honest doubt. Tighter band = more certain result.` },
+
+    { sel: '#chartWrap', title: 'Windage view', before: () => setTab('wind'),
+      body: `Sideways deflection vs range. Hover to see it broken into <b>wind lag</b> (the crosswind pushing the bullet off course) and, for rifles, <b>spin drift</b> (the spinning bullet slowly curving in the direction of its rifling twist — right for most barrels).` },
+
+    { sel: '#chartWrap', title: 'Velocity / Energy', before: () => setTab('vel'),
+      body: `Speed downrange, with a little <b>energy</b> checkbox to switch the axis to hitting power. The hatched region marks where each load goes <b>transonic</b> — watch fast cartridges hold speed far longer than slow ones.` },
+
+    { sel: '#chartWrap', title: 'Hit % view', before: () => setTab('hit'),
+      body: `Probability of a <b>first-round hit</b> vs range, with a dashed 90% guide line. This ties everything together — wind, drop uncertainty, and your precision — into the single most practical question: <b>how far can I reliably connect?</b>` },
+
+    { sel: '#tableArea', title: 'The data table', before: () => setTab('table'),
+      body: `Every number in a grid. Choose which metric to show across all loadouts, or expand <b>all columns</b> for one. <span class="term">TOF</span> = <b>Time Of Flight</b>, the seconds the bullet spends in the air — which is what wind has to work on.` },
+
+    { sel: '#dopeBtn', title: 'DOPE & CSV export', place: 'left', before: () => setTab('table'),
+      body: `<span class="term">DOPE</span> = <b>Data On Previous Engagements</b> — shooter slang for your come-up chart. This prints a compact card of drops and drifts to tape to your rifle's stock. There's also a full <b>CSV</b> export for spreadsheets.` },
+
+    { sel: '#truing', title: 'Truing — calibrate to your rifle', before: () => setTab('truing'),
+      body: `The bridge from theory to <b>your</b> gun. Shoot at a known distance, enter where it <b>actually</b> hit, and the solver back-computes your true muzzle velocity (and BC at long range) — turning an "Estimated" loadout into a "<b>Trued</b>" one with tighter bands. No chronograph required.` },
+
+    { sel: '#footNote', title: 'Methodology & sources', place: 'above', before: () => setTab('traj'),
+      body: `Nothing here is a black box. This link jumps to the full write-up: the model class, the drag tables, every stability and spin equation, the muzzle-velocity tiers, the data sources, and the <b>honest limits</b> of what the simulation can and can't know.` },
+
+    { sel: null, title: "That's the whole page",
+      body: `You now know every control and abbreviation here. Build your loadouts, set your conditions, and compare away.<br><br>
+      You can reopen this tour anytime from the <b>▶ Tutorial</b> button at the top. Happy shooting — on paper.` },
+  ];
+
+  let idx = 0, catchEl = null, hole = null, box = null, activeEl = null, reflowRAF = null;
+
+  function place(r, pref) {
+    const bw = box.offsetWidth, bh = box.offsetHeight, g = 16, m = 12;
+    const fits = {
+      right: r.right + g + bw <= innerWidth - m, left: r.left - g - bw >= m,
+      below: r.bottom + g + bh <= innerHeight - m, above: r.top - g - bh >= m };
+    const mode = pref && fits[pref] ? pref : fits.right ? 'right' : fits.left ? 'left' : fits.below ? 'below' : 'above';
+    let left, top;
+    if (mode === 'right' || mode === 'left') {
+      left = mode === 'right' ? r.right + g : r.left - g - bw;
+      top = clamp(r.top - 4, m, innerHeight - bh - m);
+    } else {
+      left = clamp(r.left + r.width / 2 - bw / 2, m, innerWidth - bw - m);
+      top = mode === 'below' ? r.bottom + g : r.top - g - bh;
+      top = clamp(top, m, innerHeight - bh - m);
+    }
+    box.style.left = left + 'px'; box.style.top = top + 'px';
+  }
+
+  function reflow() {
+    if (!activeEl) return;
+    const r = activeEl.getBoundingClientRect(), p = 6;
+    hole.style.top = (r.top - p) + 'px'; hole.style.left = (r.left - p) + 'px';
+    hole.style.width = (r.width + p * 2) + 'px'; hole.style.height = (r.height + p * 2) + 'px';
+    place(r, steps[idx].place);
+  }
+  function onScrollResize() {
+    if (reflowRAF) return;
+    reflowRAF = requestAnimationFrame(() => { reflowRAF = null; reflow(); });
+  }
+
+  function paint(step, el) {
+    box.querySelector('.step').textContent = 'Step ' + (idx + 1) + ' of ' + steps.length;
+    box.querySelector('h4').textContent = step.title;
+    box.querySelector('.body').innerHTML = step.body;
+    box.querySelector('.tut-progress i').style.width = ((idx + 1) / steps.length * 100) + '%';
+    box.querySelector('.tut-next').textContent = idx === steps.length - 1 ? 'Finish' : 'Next ›';
+    box.querySelector('.tut-back').style.visibility = idx === 0 ? 'hidden' : 'visible';
+    activeEl = el || null;
+    if (el) {
+      el.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'auto' });
+      // position synchronously — rAF is throttled when the tab isn't foregrounded
+      const r = el.getBoundingClientRect(), p = 6;
+      hole.style.display = 'block';
+      hole.style.top = (r.top - p) + 'px'; hole.style.left = (r.left - p) + 'px';
+      hole.style.width = (r.width + p * 2) + 'px'; hole.style.height = (r.height + p * 2) + 'px';
+      place(r, step.place);
+    } else {
+      hole.style.display = 'none';
+      box.style.left = Math.max(12, (innerWidth - box.offsetWidth) / 2) + 'px';
+      box.style.top = Math.max(12, (innerHeight - box.offsetHeight) / 2) + 'px';
+    }
+  }
+
+  function show() {
+    const step = steps[idx];
+    if (step.before) { try { step.before(); } catch (e) {} }
+    let tries = 0;
+    (function attempt() {
+      if (!box) return; // ended
+      const el = step.sel ? (typeof step.sel === 'function' ? step.sel() : document.querySelector(step.sel)) : null;
+      if (step.sel && !el) { if (tries++ < 18) return setTimeout(attempt, 140); return next(); }
+      paint(step, el);
+    })();
+  }
+  function next() { if (idx >= steps.length - 1) return end(); idx++; show(); }
+  function back() { if (idx > 0) { idx--; show(); } }
+
+  function onKey(e) {
+    if (e.key === 'Escape') end();
+    else if (e.key === 'ArrowRight' || e.key === 'Enter') { e.preventDefault(); next(); }
+    else if (e.key === 'ArrowLeft') { e.preventDefault(); back(); }
+  }
+
+  function end() {
+    document.removeEventListener('keydown', onKey);
+    removeEventListener('resize', onScrollResize);
+    removeEventListener('scroll', onScrollResize, true);
+    [catchEl, hole, box].forEach(n => n && n.remove());
+    catchEl = hole = box = activeEl = null;
+  }
+
+  function ensureContent() {
+    if (store.loadouts.length) return;
+    const demo = { gun_id: 'glock-19', load_id: 'fed-ae-9mm-124' };
+    if (gunById(demo.gun_id) && loadById(demo.load_id)) {
+      store.loadouts.push(Object.assign({ id: 'lo-tour-' + Date.now(), color: COLORS[0],
+        bc_model: null, precision_moa: null, pinned_range_yd: null, temp_sens_override: null,
+        chrono: null, truing: [] }, demo));
+      saveStore(); syncVis(); recompute();
+    }
+  }
+
+  function start() {
+    if (box) return; // already running
+    ensureContent();
+    idx = 0;
+    catchEl = document.createElement('div'); catchEl.className = 'tut-catch';
+    catchEl.onclick = e => e.stopPropagation();
+    hole = document.createElement('div'); hole.className = 'tut-hole pulse';
+    box = document.createElement('div'); box.className = 'tut-box';
+    box.innerHTML = `<div class="step"></div><h4></h4><div class="body"></div>
+      <div class="tut-progress"><i></i></div>
+      <div class="foot"><button class="tut-skip">Skip tour</button><span class="sp"></span>
+        <button class="tut-back">‹ Back</button><button class="tut-next">Next ›</button></div>`;
+    document.body.append(catchEl, hole, box);
+    box.querySelector('.tut-next').onclick = next;
+    box.querySelector('.tut-back').onclick = back;
+    box.querySelector('.tut-skip').onclick = end;
+    document.addEventListener('keydown', onKey);
+    addEventListener('resize', onScrollResize);
+    addEventListener('scroll', onScrollResize, true);
+    show();
+  }
+
+  const tb = $('tutBtn'); if (tb) tb.onclick = start;
+  const eb = $('tutStartEmpty'); if (eb) eb.onclick = start;
+})();
+
+/* ---------- init ---------- */
+(async () => {
+  loadStore();
+  Object.assign(U, store.ui.units || {});
+  const ok = await fetchData();
+  syncUnitButtons();
+  writeRail();
+  if (!ok) return; // dragmodels missing: solving blocked, error panel shown
+  startWorker();
+  tab = store.ui.tab || 'traj';
+  document.querySelectorAll('#tabs button').forEach(x => x.classList.toggle('active', x.dataset.tab === tab));
+  $('bandsOn').checked = store.ui.bands_on !== false;
+  $('metricSel').value = store.ui.metric || 'dropIn';
+  syncVis();
+  if (store.loadouts.length) recompute();
+  if (location.search.includes('selftest=1')) {
+    $('viz').style.display = ''; $('empty').style.display = 'none';
+    const t = BX.selftest(); renderSelftest(t);
+  }
+})();
+</script>
+</body>
+</html>

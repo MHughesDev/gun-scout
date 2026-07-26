@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gun Scout — Statistics</title>
+<style>
+  :root {
+    --bg: #12151a; --panel: #1b2027; --panel2: #222933; --border: #2e3742;
+    --text: #e6ebf1; --muted: #8a97a5; --accent: #4da3ff; --accent2: #35c48d;
+    --warn: #e6b04b; --err: #e46a6a;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 14px/1.45 system-ui, Segoe UI, sans-serif; }
+  header { padding: 14px 22px; border-bottom: 1px solid var(--border);
+           display: flex; align-items: baseline; gap: 12px; }
+  header h1 { margin: 0; font-size: 19px; letter-spacing: .5px; }
+  header span { color: var(--muted); font-size: 12px; }
+  #appNav { margin-left: auto; display: inline-flex; border: 1px solid var(--border);
+            border-radius: 7px; overflow: hidden; align-self: center; }
+  #appNav a { color: var(--muted); font-size: 13px; padding: 6px 16px; cursor: pointer;
+              text-decoration: none; }
+  #appNav a + a { border-left: 1px solid var(--border); }
+  #appNav a:hover { color: var(--text); text-decoration: none; }
+  #appNav a.active { background: var(--accent); color: #0c1015; font-weight: 600; }
+
+  table { border-collapse: collapse; width: 100%; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border);
+           font-size: 13px; white-space: nowrap; }
+  th { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .7px;
+       cursor: pointer; user-select: none; position: sticky; top: 0; background: var(--bg); }
+  th:hover { color: var(--text); }
+  .msg { font-size: 12px; color: var(--warn); margin: 4px 0 10px; }
+
+  /* ---------- stats view ---------- */
+  #statsView { padding: 18px 22px; min-width: 0; }
+  #statsBar { display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap;
+              background: var(--panel); border: 1px solid var(--border);
+              border-radius: 10px; padding: 12px 14px; margin-bottom: 14px; }
+  #statsBar label { display: flex; flex-direction: column; gap: 3px;
+                    font-size: 10px; text-transform: uppercase;
+                    letter-spacing: .7px; color: var(--muted); }
+  #statsBar select, #statsBar input[type=text], #statsBar input:not([type]) {
+    background: var(--panel2); color: var(--text); border: 1px solid var(--border);
+    border-radius: 6px; padding: 6px 8px; font-size: 13px; min-width: 110px; }
+  #statsBar input.narrow { min-width: 0; width: 76px; }
+  #statsBar label.chk { flex-direction: row; align-items: center; gap: 6px;
+                        text-transform: none; letter-spacing: 0; font-size: 12px;
+                        color: var(--text); padding-bottom: 7px; }
+  #statsBar .prices { display: flex; align-items: center; gap: 5px; }
+  /* engine switcher */
+  #engineTabs { display: inline-flex; border: 1px solid var(--border); border-radius: 7px;
+                overflow: hidden; }
+  #engineTabs button { background: none; border: 0; color: var(--muted); font-size: 13px;
+                       padding: 7px 15px; cursor: pointer; }
+  #engineTabs button + button { border-left: 1px solid var(--border); }
+  #engineTabs button:hover { color: var(--text); }
+  #engineTabs button.active { background: var(--accent); color: #0c1015; font-weight: 600; }
+  #stRefresh { background: var(--accent); color: #0c1015; font-weight: 600; border: 0;
+               border-radius: 7px; padding: 8px 18px; font-size: 13px; cursor: pointer; }
+  #stRefresh:hover { filter: brightness(1.1); }
+  #stSummary { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+  .stat-chip { background: var(--panel); border: 1px solid var(--border);
+               border-radius: 9px; padding: 8px 14px; }
+  .stat-chip b { display: block; font-size: 17px; color: var(--accent2); }
+  .stat-chip.n b { color: var(--accent); }
+  .stat-chip small { color: var(--muted); font-size: 11px; text-transform: uppercase;
+                     letter-spacing: .6px; }
+  #stQuality { color: var(--muted); font-size: 12px; margin: 4px 0 12px; }
+  #stQuality b { color: var(--text); font-weight: 600; }
+  #stQuality .lowq { color: var(--warn); }
+  #stTblWrap { overflow-x: auto; }
+  #stTbl td.key { font-weight: 600; max-width: 300px; overflow: hidden;
+                  text-overflow: ellipsis; }
+  #stTbl td.num, #stTbl th.num { text-align: right; }
+  #stTbl tr.grp { cursor: pointer; }
+  #stTbl tr:hover td { background: #1a2028; }
+  #stTbl td .sharebar { position: relative; min-width: 120px; height: 16px;
+                        background: var(--panel2); border-radius: 4px; overflow: hidden; }
+  #stTbl td .sharebar i { position: absolute; inset: 0 auto 0 0; width: var(--w);
+                          background: var(--accent); opacity: .55; border-radius: 4px; }
+  #stTbl td .sharebar b { position: relative; z-index: 1; font-size: 11px;
+                          font-weight: 600; padding-left: 6px; line-height: 16px; }
+  .median { color: var(--accent2); font-weight: 700; }
+  #stEmpty { color: var(--muted); padding: 40px 0; text-align: center; }
+  #stHint { color: var(--muted); font-size: 11px; margin-top: 10px; }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Gun Scout</h1>
+  <span id="stSub">market statistics</span>
+  <nav id="appNav">
+    <a href="/">Search</a>
+    <a href="/stats" class="active">Stats</a>
+    <a href="/ballistics">Ballistics</a>
+  </nav>
+</header>
+
+<section id="statsView">
+  <div id="statsBar">
+    <label>Engine
+      <span id="engineTabs">
+        <button data-v="guns" class="active">Guns</button>
+        <button data-v="parts">Parts</button>
+        <button data-v="ammo">Ammo</button>
+      </span>
+    </label>
+    <label>Group by
+      <select id="stGroup"></select>
+    </label>
+    <label>Caliber
+      <input id="stCaliber" list="dlStCalibers" placeholder="all" autocomplete="off">
+    </label>
+    <label>Manufacturer
+      <input id="stMfr" list="dlStMfrs" placeholder="all" autocomplete="off">
+    </label>
+    <label class="guns-only">Action
+      <select id="stAction"><option value="">any</option></select>
+    </label>
+    <label class="guns-only">Gun type
+      <select id="stType"><option value="">any</option></select>
+    </label>
+    <label>Condition
+      <select id="stCond">
+        <option value="">any</option>
+        <option value="new">new</option>
+        <option value="used">used</option>
+      </select>
+    </label>
+    <label>Price range
+      <span class="prices">
+        <input id="stPmin" class="narrow" inputmode="numeric" placeholder="min">
+        –
+        <input id="stPmax" class="narrow" inputmode="numeric" placeholder="max">
+      </span>
+    </label>
+    <label class="chk guns-only"><input type="checkbox" id="stBundles"> include bundle prices</label>
+    <label class="chk guns-only"><input type="checkbox" id="stTrade"> exclude trade-ins</label>
+    <button id="stRefresh">Refresh</button>
+  </div>
+  <div id="stSummary"></div>
+  <div id="stQuality"></div>
+  <div id="stEmpty" style="display:none"></div>
+  <div id="stTblWrap">
+    <table id="stTbl" style="display:none">
+      <thead><tr>
+        <th data-sk="key">Group</th>
+        <th data-sk="count" class="num">Listings</th>
+        <th data-sk="share">Share</th>
+        <th data-sk="min" class="num">Low</th>
+        <th data-sk="p25" class="num">P25</th>
+        <th data-sk="median" class="num">Median</th>
+        <th data-sk="p75" class="num">P75</th>
+        <th data-sk="p95" class="num">P95</th>
+        <th data-sk="max" class="num">High</th>
+        <th data-sk="mean" class="num">Mean</th>
+        <th data-sk="priced" class="num">Priced</th>
+      </tr></thead>
+      <tbody id="stBody"></tbody>
+    </table>
+  </div>
+  <div id="stHint"></div>
+  <datalist id="dlStCalibers"></datalist>
+  <datalist id="dlStMfrs"></datalist>
+</section>
+
+<script>
+const $ = id => document.getElementById(id);
+function esc(s) { const d = document.createElement('div'); d.textContent = s ?? ''; return d.innerHTML; }
+
+let VERTICAL = 'guns';
+let statsData = null, statsSortKey = 'count', statsSortDir = -1, priceLabel = 'price';
+
+const GROUP_LABELS = {
+  caliber: 'Caliber', manufacturer: 'Manufacturer', model: 'Model', action: 'Action',
+  gun_type: 'Gun type', condition: 'Condition', condition_grade: 'Condition grade',
+  capacity: 'Capacity', barrel: 'Barrel length', site: 'Site', listing_type: 'Listing type',
+  bullet_type: 'Bullet type', grain: 'Grain', case_material: 'Case material',
+  round_count: 'Round count', part_category: 'Part category', fitment: 'Fitment',
+};
+const GUN_TYPES = ['pistol', 'revolver', 'rifle', 'shotgun', 'muzzleloader', 'other'];
+
+/* cost-per-round prices are sub-dollar — format them as ¢/$; guns/parts round to $ */
+function money(v) {
+  if (v == null) return '—';
+  if (priceLabel === '$/round') return v < 1 ? '¢' + (v * 100).toFixed(1) : '$' + v.toFixed(2);
+  return '$' + Math.round(v).toLocaleString();
+}
+
+async function loadSchemaPresets() {
+  try {
+    const s = await (await fetch(`/api/${VERTICAL}/schema`)).json();
+    const p = s.presets || {};
+    $('dlStCalibers').innerHTML = (p.calibers || []).map(c => `<option value="${esc(c)}">`).join('');
+    $('dlStMfrs').innerHTML = (p.manufacturers || []).map(m => `<option value="${esc(m)}">`).join('');
+    $('stAction').innerHTML = '<option value="">any</option>' +
+      (p.actions || []).map(a => `<option value="${esc(a)}">${esc(a)}</option>`).join('');
+    $('stType').innerHTML = '<option value="">any</option>' +
+      GUN_TYPES.map(t => `<option value="${esc(t)}">${esc(t)}</option>`).join('');
+  } catch (e) { /* dropdowns just stay sparse */ }
+}
+
+function statsQuery() {
+  const v = id => $(id).value.trim();
+  const p = new URLSearchParams();
+  if ($('stGroup').value) p.set('group_by', $('stGroup').value);
+  if (v('stCaliber')) p.set('caliber', v('stCaliber'));
+  if (v('stMfr')) p.set('manufacturer', v('stMfr'));
+  if (VERTICAL === 'guns') {
+    if (v('stAction')) p.set('action', v('stAction'));
+    if (v('stType')) p.set('gun_type', v('stType'));
+    if ($('stBundles').checked) p.set('include_bundles', '1');
+    if ($('stTrade').checked) p.set('exclude_tradeins', '1');
+  }
+  if (v('stCond')) p.set('condition', v('stCond'));
+  if (v('stPmin')) p.set('price_min', v('stPmin'));
+  if (v('stPmax')) p.set('price_max', v('stPmax'));
+  return p;
+}
+
+function buildGroupOptions(choices, current) {
+  if (!choices) return;
+  const cur = current || $('stGroup').value;
+  $('stGroup').innerHTML = choices.map(c =>
+    `<option value="${c}"${c === cur ? ' selected' : ''}>${esc(GROUP_LABELS[c] || c)}</option>`).join('');
+}
+
+async function loadStats() {
+  $('stSummary').innerHTML = '<div class="stat-chip"><b>…</b><small>loading</small></div>';
+  try {
+    statsData = await (await fetch(`/api/${VERTICAL}/stats?` + statsQuery())).json();
+  } catch (e) {
+    $('stSummary').innerHTML = `<div class="msg">Stats failed: ${esc(String(e))}</div>`;
+    return;
+  }
+  priceLabel = statsData.price_label || 'price';
+  buildGroupOptions(statsData.group_choices, statsData.group_by);
+  renderStats();
+}
+
+function renderStats() {
+  const d = statsData;
+  if (!d || d.error) {
+    $('stSummary').innerHTML = `<div class="msg">${esc(d && d.error || 'no data')}</div>`;
+    return;
+  }
+  const o = d.overall || {};
+  const priceWord = priceLabel === '$/round' ? 'per round' : 'price';
+  $('stSummary').innerHTML = `
+    <div class="stat-chip n"><b>${d.matched.toLocaleString()}</b><small>listings matched</small></div>
+    <div class="stat-chip n"><b>${(o.priced || 0).toLocaleString()}</b><small>with ${esc(priceWord)}</small></div>
+    <div class="stat-chip"><b>${money(o.median)}</b><small>median ${esc(priceWord)}</small></div>
+    <div class="stat-chip"><b>${money(o.p25)} – ${money(o.p75)}</b><small>middle 50%</small></div>
+    <div class="stat-chip"><b>${money(o.min)} – ${money(o.max)}</b><small>full range</small></div>
+    <div class="stat-chip"><b>${money(o.mean)}</b><small>mean</small></div>`;
+
+  const q = d.quality || {}, ql = d.quality_labels || {};
+  const qbit = (k, v) => v == null ? '' :
+    `<span class="${v < 80 ? 'lowq' : ''}">${esc(ql[k] || k.replace('_known_pct', ''))} <b>${v}%</b></span>`;
+  $('stQuality').innerHTML = d.matched ? 'Field coverage: '
+    + Object.keys(q).map(k => qbit(k, q[k])).filter(Boolean).join(' · ')
+    + (d.bundles_excluded_from_prices
+       ? ` &nbsp;·&nbsp; ${d.bundles_excluded_from_prices} bundle prices excluded` : '')
+    + ` &nbsp;·&nbsp; ${(d.total_stored || 0).toLocaleString()} ${VERTICAL} listings stored` : '';
+
+  $('stHint').innerHTML = priceLabel === '$/round'
+    ? 'Ammo stats use cost-per-round (price ÷ round count). Only loaded ammunition counts; guns, components and reloading supplies are excluded. Click a row to drill in.'
+    : (VERTICAL === 'parts'
+        ? 'Price stats use firm/buy-now prices. Only parts &amp; accessories count; complete guns and ammo are excluded. Click a row to drill in.'
+        : 'Price stats use firm/buy-now prices plus closed-auction hammer prices; open-auction bids are never counted. Parts, accessories and ammo are excluded (kind=firearm). Click a row to drill into that group.');
+
+  let groups = [...(d.groups || [])];
+  if (!groups.length) {
+    $('stTbl').style.display = 'none';
+    $('stEmpty').style.display = '';
+    $('stEmpty').innerHTML = d.total_stored
+      ? 'No stored listings match these filters.'
+      : `No stored ${VERTICAL} listings yet — run a few <a href="${VERTICAL === 'guns' ? '/' : '/' + VERTICAL}">searches</a> first; every result is stored and feeds these stats.`;
+    return;
+  }
+  $('stEmpty').style.display = 'none';
+  $('stTbl').style.display = '';
+  const k = statsSortKey;
+  groups.sort((a, b) => {
+    const av = a[k], bv = b[k];
+    if (av == null && bv == null) return 0;
+    if (av == null) return 1;
+    if (bv == null) return -1;
+    return (av < bv ? -1 : av > bv ? 1 : 0) * statsSortDir;
+  });
+  const maxShare = Math.max(...groups.map(g => g.share || 0), 1);
+  $('stBody').innerHTML = groups.map(g => `
+    <tr class="grp" data-key="${esc(g.key)}">
+      <td class="key" title="${esc(g.key)}">${esc(g.key)}</td>
+      <td class="num">${g.count.toLocaleString()}</td>
+      <td><div class="sharebar" style="--w:${(100 * (g.share || 0) / maxShare).toFixed(1)}%">
+        <i></i><b>${g.share}%</b></div></td>
+      <td class="num">${money(g.min)}</td>
+      <td class="num">${money(g.p25)}</td>
+      <td class="num median">${money(g.median)}</td>
+      <td class="num">${money(g.p75)}</td>
+      <td class="num">${money(g.p95)}</td>
+      <td class="num">${money(g.max)}</td>
+      <td class="num">${money(g.mean)}</td>
+      <td class="num">${g.priced.toLocaleString()}</td>
+    </tr>`).join('')
+    + (d.truncated_groups
+       ? `<tr><td colspan="11" style="color:var(--muted)">…+${d.truncated_groups} more groups (raise limit)</td></tr>` : '');
+
+  const NEXT = {caliber: 'manufacturer', manufacturer: 'model', gun_type: 'caliber',
+                action: 'manufacturer', part_category: 'manufacturer', fitment: 'part_category',
+                bullet_type: 'caliber', grain: 'caliber'};
+  document.querySelectorAll('#stTbl tr.grp').forEach(tr => tr.onclick = () => {
+    const key = tr.dataset.key, grp = statsData.group_by;
+    if (key === '(unknown)') return;
+    if (grp === 'caliber') $('stCaliber').value = key;
+    else if (grp === 'manufacturer') $('stMfr').value = key;
+    else if (grp === 'action') $('stAction').value = key;
+    else if (grp === 'gun_type') $('stType').value = key;
+    else if (!NEXT[grp]) return;
+    if (NEXT[grp]) $('stGroup').value = NEXT[grp];
+    loadStats();
+  });
+}
+
+function switchVertical(v) {
+  if (v === VERTICAL) return;
+  VERTICAL = v;
+  document.querySelectorAll('#engineTabs button').forEach(b => b.classList.toggle('active', b.dataset.v === v));
+  $('stSub').textContent = {guns: 'firearm', parts: 'parts', ammo: 'ammo'}[v] + ' market statistics';
+  document.querySelectorAll('.guns-only').forEach(el => el.classList.toggle('hidden', v !== 'guns'));
+  // reset group + filters so a guns grouper doesn't leak into ammo
+  ['stCaliber', 'stMfr', 'stAction', 'stType', 'stPmin', 'stPmax'].forEach(id => $(id).value = '');
+  $('stGroup').innerHTML = '';
+  statsSortKey = 'count'; statsSortDir = -1;
+  loadSchemaPresets();
+  loadStats();
+}
+
+document.querySelectorAll('#engineTabs button').forEach(b => b.onclick = () => switchVertical(b.dataset.v));
+document.querySelectorAll('#stTbl th[data-sk]').forEach(th => th.onclick = () => {
+  const k = th.dataset.sk;
+  statsSortDir = statsSortKey === k ? -statsSortDir : (k === 'key' ? 1 : -1);
+  statsSortKey = k;
+  renderStats();
+});
+['stGroup', 'stAction', 'stType', 'stCond', 'stBundles', 'stTrade'].forEach(id => $(id).onchange = loadStats);
+['stCaliber', 'stMfr', 'stPmin', 'stPmax'].forEach(id => {
+  $(id).onchange = loadStats;
+  $(id).addEventListener('keydown', e => { if (e.key === 'Enter') loadStats(); });
+});
+$('stRefresh').onclick = loadStats;
+
+(async () => {
+  // allow deep-linking a vertical: /stats#ammo
+  const h = (location.hash || '').replace('#', '');
+  if (['guns', 'parts', 'ammo'].includes(h)) {
+    VERTICAL = h;
+    document.querySelectorAll('#engineTabs button').forEach(b => b.classList.toggle('active', b.dataset.v === h));
+    document.querySelectorAll('.guns-only').forEach(el => el.classList.toggle('hidden', h !== 'guns'));
+    $('stSub').textContent = {guns: 'firearm', parts: 'parts', ammo: 'ammo'}[h] + ' market statistics';
+  }
+  await loadSchemaPresets();
+  loadStats();
+})();
+</script>
+</body>
+</html>

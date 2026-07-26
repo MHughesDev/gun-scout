@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.pyc
+
+# SQLite database + WAL sidecars
+gun_scout.db
+gun_scout.db-shm
+gun_scout.db-wal
+
+# Secrets — live API tokens/keys, never commit
+cabelas_token.json
+cabelas_token.txt
+gunbroker_key.txt
+
+# Cabela's token minter (Node) — deps + browser profile with session cookies
+cabelas_minter/node_modules/
+cabelas_minter/profile/
+# ad-hoc stdout/stderr captures from running mint.js by hand may hold a live token
+cabelas_minter/mint_*.txt
+
+# Runtime logs
+*.log
+server.err.log
