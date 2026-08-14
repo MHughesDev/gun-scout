@@ -41,6 +41,7 @@ from urllib.parse import urlsplit
 import requests
 
 import guard
+import statstore
 
 log = logging.getLogger("gun_scout.worker")
 
@@ -49,7 +50,11 @@ IDLE_POLL_S = 3          # between "nothing to do" polls
 ERROR_BACKOFF_S = 15     # after a failed poll (deployment asleep/restarting)
 RESULT_BATCH = 100       # listings per upload
 MAX_PARALLEL_JOBS = 2    # concurrent site scrapes; keeps home bandwidth sane
-TOKEN_REFRESH_S = 1800   # how often to top up the shared Cabela's token
+# How often to top up the shared Cabela's token. Must be well under the
+# deployment's own refresh-ahead window (cabelas_token.REFRESH_AHEAD_S, 15 min)
+# or a tick can straddle it and leave everyone without a token until someone's
+# search mints one on demand.
+TOKEN_REFRESH_S = 600
 
 
 class Worker:
@@ -170,6 +175,22 @@ class Worker:
             time.sleep(ERROR_BACKOFF_S if n < 0 else (IDLE_POLL_S if n == 0 else 0.5))
 
 
+def _share_tokens(url: str):
+    """Relay every freshly-minted Cabela's token to the deployment, so a token
+    minted on demand mid-search is shared immediately instead of waiting for
+    the next _token_loop tick."""
+    import cabelas_token
+    import push_token
+
+    def donate(token: str):
+        accepted, message = push_token.push(
+            token, url, os.environ.get("GS_TOKEN_PUSH_KEY", ""))
+        log.info("cabelas: shared new token with %s — %s", url,
+                 message if accepted else f"NOT accepted: {message}")
+
+    cabelas_token.set_mint_listener(donate)
+
+
 def _token_loop(url: str, key: str):
     """Keep the deployment's shared Cabela's token fresh. Only this machine can
     mint it (a real browser on a cabelas.com page), so the worker owns it."""
@@ -210,6 +231,17 @@ def main() -> int:
         root.addHandler(fh)
     except OSError:
         pass    # read-only dir: console logging alone is fine
+    # The shared Cabela's Coveo token lives in the app DB's kv table, and the
+    # Cabela's client runs HERE now, so this process has to be able to read and
+    # write it — otherwise every Cabela's job spends a minute minting a token it
+    # then can't cache, and errors out. kv only: the worker never reads a fact.
+    statstore.start_kv()
+    # This machine is the only one that CAN mint, so every token it mints is
+    # donated to the deployment the moment it exists rather than at the next
+    # refresh tick — one visitor's search pays the mint, everyone gets the
+    # token, and the hosted fallback stays alive while this worker is offline.
+    _share_tokens(args.url)
+
     key = os.environ.get("GS_WORKER_KEY", "")
     if not key:
         log.warning("GS_WORKER_KEY is not set — fine for a local test, but the "

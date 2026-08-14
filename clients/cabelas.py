@@ -14,12 +14,12 @@ firearm-class, price) and supports server-side filtering + pagination. Probed
 
 The one catch: Coveo requires a short-lived (~4h) anonymous bearer token, and
 that token is minted only by `POST cabelas.com/api/v2/.../coveo/getCoveoToken`
-— which IS behind Akamai, so plain server-side HTTP can't mint it. But the
-endpoint is CORS-open, so visitors' browsers can: `cabelas_token.py` keeps ONE
-shared token in the app DB, the search page auto-refreshes it from whichever
-visitor's browser notices it's aged, and a dev box with Node can still mint
-via the headed-browser fallback. This client just asks for a token and never
-worries about freshness; when no valid token exists yet it reports itself
+— which IS behind Akamai, so plain server-side HTTP can't mint it. Only a real
+browser on a cabelas.com page can, which means the operator's machine:
+`cabelas_token.py` keeps ONE shared token in the app DB, the local worker mints
+it via the headed-browser minter and donates every one it mints to the
+deployment, so all visitors share it. This client just asks for a token and
+never worries about freshness; when no valid token exists yet it reports itself
 blocked, like the GunBroker client without a dev key.
 
 Server-side filters (Coveo advanced query `aq`): @isgun==1 (guns only, drops

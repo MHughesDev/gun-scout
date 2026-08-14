@@ -240,7 +240,7 @@ def worker_status():
     return jsonify(remote.status())
 
 
-# ---- shared Cabela's token (crowd-refreshed, stored in the app DB) -------
+# ---- shared Cabela's token (relayed by the worker, stored in the app DB) ---
 
 @app.get("/api/cabelas/token")
 def cabelas_token_status():

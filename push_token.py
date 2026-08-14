@@ -35,6 +35,28 @@ import statstore
 DEFAULT_URL = "https://gun-scout.onrender.com"
 
 
+def push(token: str, url: str, key: str = "") -> tuple[bool, str]:
+    """Donate one token to the deployment, where it becomes THE shared token
+    for every visitor. Returns (accepted, message); never raises. Also called
+    directly by the worker, which shares each token it mints as it mints it."""
+    headers = {"Content-Type": "application/json"}
+    if key:
+        headers["X-Push-Key"] = key
+    try:
+        r = requests.post(f"{url.rstrip('/')}/api/cabelas/token", headers=headers,
+                          data=json.dumps({"token": token}), timeout=40)
+    except requests.RequestException as e:
+        return False, f"push failed: {e}"
+    body = {}
+    if r.headers.get("content-type", "").startswith("application/json"):
+        body = r.json()
+    if r.status_code == 200 and body.get("accepted"):
+        return True, (f"shared token now valid for "
+                      f"{body.get('expires_in_s', 0) // 60} min")
+    return False, (f"REJECTED (HTTP {r.status_code}): "
+                   f"{body.get('message') or body.get('error') or r.text[:200]}")
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--force", action="store_true",
@@ -43,7 +65,7 @@ def main() -> int:
                     help="deployment base URL")
     args = ap.parse_args()
 
-    statstore.start()   # the local token cache lives in the app DB
+    statstore.start_kv()   # the token cache lives in the app DB's kv table
 
     # Skip the ~1-minute browser mint when the deployment is already covered.
     if not args.force:
@@ -63,25 +85,12 @@ def main() -> int:
         print(f"MINT FAILED: {e}", file=sys.stderr)
         return 1
 
-    headers = {"Content-Type": "application/json"}
-    key = os.environ.get("GS_TOKEN_PUSH_KEY", "")
-    if key:
-        headers["X-Push-Key"] = key
-    try:
-        r = requests.post(f"{args.url}/api/cabelas/token", headers=headers,
-                          data=json.dumps({"token": token}), timeout=40)
-    except requests.RequestException as e:
-        print(f"push failed: {e}", file=sys.stderr)
-        return 1
-
-    body = r.json() if r.headers.get("content-type", "").startswith("application/json") else {}
-    if r.status_code == 200 and body.get("accepted"):
-        print(f"pushed OK — shared token now valid for "
-              f"{body.get('expires_in_s', 0) // 60} min")
-        statstore.ENGINE.flush()
+    accepted, message = push(token, args.url,
+                             os.environ.get("GS_TOKEN_PUSH_KEY", ""))
+    if accepted:
+        print(f"pushed OK — {message}")
         return 0
-    print(f"REJECTED (HTTP {r.status_code}): {body.get('message') or body.get('error') or r.text[:200]}",
-          file=sys.stderr)
+    print(message, file=sys.stderr)
     return 1
 
 

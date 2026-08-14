@@ -11,8 +11,10 @@ So the lifecycle is:
   * The one current token lives in the app database (statstore kv table) and
     is shared by every user of the deployment — visitors configure nothing.
   * A machine that CAN mint (a dev box with the Node/Playwright minter set up
-    and a residential IP) donates tokens to the deployment by running
-    `push_token.py`, ideally on a 3-hourly schedule.
+    and a residential IP) donates tokens to the deployment. The local worker
+    does this automatically — it tops the deployment up on a timer AND relays
+    every token it mints on demand through set_mint_listener() — or run
+    `push_token.py` by hand / on a schedule.
   * accept_token() validates every incoming token hard — pinned Coveo org,
     not near expiry, and it must answer a live catalog probe — before it may
     replace the shared token, so the shared slot can't be poisoned.
@@ -68,6 +70,15 @@ MINT_FAIL_COOLDOWN_S = 120
 # a threading.Lock is enough; freshness is double-checked inside it.
 _lock = threading.Lock()
 _last_fail = {"at": 0.0, "msg": ""}   # negative cache, guarded by _lock
+# Last-resort copy of the store for a process whose DB isn't open. Minting
+# costs a ~1-minute headed browser run, so a token must never be thrown away
+# just because it couldn't be persisted.
+_memory_store: dict = {}
+
+# Notified with every freshly-minted token so the minting process can share it
+# (the worker donates it to the deployment — see worker.py). A hook, so this
+# module needs to know nothing about deployments or push keys.
+_mint_listener = None
 
 
 class MintError(Exception):
@@ -84,6 +95,8 @@ def _read_store() -> dict:
             return json.loads(raw)
         except ValueError:
             return {}
+    if _memory_store.get("token"):
+        return _memory_store   # DB unavailable in this process; see _write_store
     # one-time import of the pre-DB file cache so a dev box keeps its token
     try:
         legacy = json.loads(LEGACY_STORE.read_text(encoding="utf-8"))
@@ -98,7 +111,12 @@ def _read_store() -> dict:
 
 
 def _write_store(d: dict):
+    """Persist the shared token. The in-process copy is updated FIRST so that a
+    process without an open DB (kv_set raises) still reuses the token for its
+    own lifetime instead of re-minting on every request."""
     import statstore
+    _memory_store.clear()
+    _memory_store.update(d)
     statstore.ENGINE.kv_set(_KV_KEY, json.dumps(d))
 
 
@@ -176,13 +194,47 @@ def _run_minter() -> dict:
         "mint_seconds": round(time.time() - t0, 1),
         "source": "local minter",
     }
-    _write_store(store)
+    _announce(token)
+    try:
+        _write_store(store)
+    except RuntimeError as e:
+        # No DB open here (bare CLI). The token is perfectly good and is now in
+        # the in-process store — use it rather than failing the search that just
+        # waited a minute for it.
+        log.warning("cabelas: token minted but not persisted (%s); it is "
+                    "cached in this process only", e)
     log.info("cabelas: token minted in %.0fs, valid until %s",
              time.time() - t0, _iso(exp))
     return store
 
 
 # ---- public API -----------------------------------------------------------
+
+def set_mint_listener(fn):
+    """Register a callback invoked with every freshly-minted token. The worker
+    uses it to donate the token to the deployment the moment it exists, so a
+    mint triggered by one visitor's search immediately serves everyone —
+    including the hosted fallback that runs when the worker is offline."""
+    global _mint_listener
+    _mint_listener = fn
+
+
+def _announce(token: str):
+    """Fire the mint listener off-thread: minting already cost the waiting
+    search a minute, and a slow (or failing) relay must not add to it or take
+    down a token that is perfectly good locally."""
+    fn = _mint_listener
+    if fn is None:
+        return
+
+    def run():
+        try:
+            fn(token)
+        except Exception:
+            log.exception("cabelas: could not share the freshly-minted token")
+
+    threading.Thread(target=run, daemon=True, name="cabelas-token-share").start()
+
 
 def get_valid_token(force: bool = False) -> str:
     """Return a currently-valid Coveo token from the shared DB store, minting
@@ -272,8 +324,9 @@ def accept_token(token: str) -> tuple[bool, str]:
 
 
 def public_status() -> dict:
-    """What the frontend needs to run the crowd-refresh loop. No token value
-    ever leaves the server this way."""
+    """Freshness only — what the operator's relay polls to decide whether the
+    deployment needs a new token. No token value ever leaves the server this
+    way."""
     store = _read_store()
     exp = store.get("expires_at") or 0
     left = int(exp - time.time()) if store.get("token") else 0

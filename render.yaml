@@ -19,9 +19,14 @@ services:
         value: 3.13.4
       # Shared server-side key — every visitor uses it. Optional; the
       # GunBroker client just reports itself blocked until it exists.
-      # (The Cabela's Coveo token needs NO config: it lives in the app DB and
-      # visitors' browsers refresh it automatically when it ages.)
       - key: GUNBROKER_DEV_KEY   # free key: gunbroker.com > Help > API
+        sync: false
+      # Cabela's Coveo token: needs no value here — it lives in the app DB and
+      # the operator's worker relays a fresh one every time it mints. This key
+      # only gates WHO may donate one. Optional (every pushed token is validated
+      # against the pinned Coveo org and a live catalog probe regardless), but
+      # set it here and in the worker's environment to keep the slot yours.
+      - key: GS_TOKEN_PUSH_KEY
         sync: false
       # Shared secret for the local worker (worker.py) that scrapes from the
       # operator's home connection. REQUIRED for the worker protocol: without

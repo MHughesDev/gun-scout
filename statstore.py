@@ -264,18 +264,34 @@ class StatEngine:
 
     # ---- lifecycle -------------------------------------------------------
 
+    def _open(self):
+        """Connect and ensure the schema exists. Idempotent, so start() and
+        start_kv() can be called in either order."""
+        with self._lock:
+            if self._conn is not None:
+                return
+            Path(self._db_path).parent.mkdir(parents=True, exist_ok=True)
+            conn = sqlite3.connect(self._db_path, timeout=15,
+                                   check_same_thread=False)
+            conn.row_factory = sqlite3.Row
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.executescript(_SCHEMA)
+            self._conn = conn
+
+    def start_kv(self):
+        """Open ONLY the shared key/value store: no legacy migration, no fact
+        load, no flusher thread. The worker process needs the kv table (it is
+        where the shared Cabela's token lives) but never reads a fact, and
+        pulling tens of thousands of them into RAM there is pure overhead."""
+        self._open()
+
     def start(self):
         """Open the DB, migrate any legacy schema, load facts, start flusher."""
         with self._lock:
             if self._started:
                 return
             self._started = True
-        Path(self._db_path).parent.mkdir(parents=True, exist_ok=True)
-        self._conn = sqlite3.connect(self._db_path, timeout=15,
-                                     check_same_thread=False)
-        self._conn.row_factory = sqlite3.Row
-        self._conn.execute("PRAGMA journal_mode=WAL")
-        self._conn.executescript(_SCHEMA)
+        self._open()
         self._migrate_legacy()
         n = self._load()
         log.info("stat engine up: %d facts loaded", n)
@@ -501,3 +517,8 @@ ENGINE = StatEngine()
 
 def start():
     ENGINE.start()
+
+
+def start_kv():
+    """Open just the shared key/value store (see StatEngine.start_kv)."""
+    ENGINE.start_kv()
