@@ -1,25 +1,41 @@
 """Palmetto State Armory client (retailer — new guns PLUS a used/surplus/
 trade-in section, unlike the other retail sites).
 
-Classic Magento 2 storefront (Amasty search extension), plain server-rendered
-HTML that curl reads fine. Two routes:
+Classic Magento 2 storefront, plain server-rendered HTML. Everything here is
+walked through CATEGORY pages, because PSA's own search endpoint is off limits:
 
-- Text queries go to /catalogsearch/result/?q=<query>. Amasty 302-redirects
-  queries it recognizes to category landing pages ('30-06 rifle' ->
-  /guns/rifles/bolt-action-rifles/30-06-rifles.html, 'glock 19' ->
-  /brands/glock/glock-19.html) — their redirect IS the query understanding, so
-  we keep it: fetcher.fetch follows it, and we pick the landing URL back out
-  of the page's <link rel="canonical"> to paginate it with ?p=N (the redirect
-  wouldn't preserve a p= param). Unmapped queries render a native grid on the
-  search URL itself, paginated with &p=N. A landing under /guns/ marks the
-  results kind='firearm' (their categorization is store-curated, trustworthy —
-  the hard-parts title override still applies). Exact-product queries can
-  302 all the way to a product detail page; that parses as a single listing.
+    robots.txt:  # --- CATALOG & SEARCH ---
+                 Disallow: /catalogsearch/
 
-- No text query: walk the /guns/ category tree directly. The USED category
-  (guns/used-guns-surplus-firearms-trade-ins) is walked FIRST so its URLs
-  enter `seen` tagged used before the platform categories would claim them as
-  new; outside it a title saying used/surplus/trade-in also tags used.
+and Cloudflare enforces that with an unconditional managed challenge — every
+/catalogsearch/ URL answers 403 + `Cf-Mitigated: challenge` no matter the
+client, while the rest of the store serves normally (probed 2026-08-13; this
+client used to search that endpoint and reported itself blocked once the rule
+went in). Their Magento GraphQL and REST APIs both answer 401, and the only
+open search route, /search/ajax/suggest/, returns related SEARCH TERMS and
+their hit counts — no products. So there is no permitted query endpoint, and
+a text query is answered from the landing pages robots.txt does allow:
+
+- Brand landing pages (/brands/<slug>.html) when the query or the manufacturer
+  filter names a brand we know. Slugs are derived from the brand and its
+  aliases; PSA spells them inconsistently ('smith-wesson' but
+  'heckler-and-koch', 'savage-arms' not 'savage'), so candidates are tried in
+  order and the first with products wins — a wrong guess 404s or renders an
+  empty category, both cheap.
+- Otherwise the /guns/ category tree, same as a no-keyword search.
+
+Either way the keyword is matched against titles HERE (_title_matches), since
+no server-side relevance ranking is involved any more. Matching ignores
+punctuation so '10/22' finds '10-22' and '1022'.
+
+No text query: walk the /guns/ tree directly. The USED category
+(guns/used-guns-surplus-firearms-trade-ins) is walked FIRST so its URLs enter
+`seen` tagged used before the platform categories would claim them as new;
+outside it a title saying used/surplus/trade-in also tags used.
+
+Fetches impersonate Firefox (see IMPERSONATE): Cloudflare bot-scores the
+allowed pages too, and every Chrome fingerprint curl_cffi ships — including
+the current one — is challenged on them, while Firefox and Safari pass.
 
 Cards: <li class="item product product-item"> with an
 <a class="product-item-link" href> title anchor, a product-image-photo <img>,
@@ -28,21 +44,26 @@ and a machine-readable price (data-price-amount= + data-price-type=
 category (23-92/page) and product_list_limit is ignored, so pagination just
 walks ?p=N until an empty or all-duplicate page (Magento repeats the last
 page past the end). A dormant Cloudflare waiting room fronts the site
-(__cfwaitingroom cookie) — not enforcing as of 2026-07, but be polite.
+(__cfwaitingroom cookie) — not enforcing as of 2026-08, but be polite.
 """
 import html as _html
 import itertools
 import re
 import time
 from typing import Callable
-from urllib.parse import quote_plus, urlparse
-
 from fetcher import fetch, FetchError
 from models import SearchCriteria, Listing
 from .base import SiteClient, ClientBlocked, StructureError, register, page_limit_reached
 from . import titleparse
 
 BASE = "https://palmettostatearmory.com"
+
+# Cloudflare bot-scores this store and challenges every Chrome fingerprint
+# curl_cffi can forge (chrome124 through chrome146, desktop and android, all
+# 403 + Cf-Mitigated: challenge — probed 2026-08-13). Firefox and Safari pass
+# on the pages robots.txt allows. If this stops working, re-probe the target
+# list rather than reaching for the disallowed search endpoint.
+IMPERSONATE = "firefox144"
 
 _USED_CAT = "guns/used-guns-surplus-firearms-trade-ins"
 # (path, gun_type it implies; '' where the tree mixes platforms). The used
@@ -64,12 +85,6 @@ IMG_RE = re.compile(
     r'<img[^>]*class="[^"]*product-image-photo[^"]*"[^>]*?src="([^"]+)"', re.S)
 PRICE_RE = re.compile(
     r'data-price-amount="([\d.]+)"\s+data-price-type="finalPrice"')
-CANONICAL_RE = re.compile(
-    r'<link[^>]*rel="canonical"[^>]*href="([^"]+)"|'
-    r'<link[^>]*href="([^"]+)"[^>]*rel="canonical"')
-# a product DETAIL page, per the body class — the bare string
-# 'catalog-product-view' also appears inside shared CSS on every page
-PRODUCT_PAGE_RE = re.compile(r'<body[^>]*class="[^"]*catalog-product-view')
 # main-product price on a detail page. The visible price box is JS-rendered
 # for used/surplus items (and cross-sell tiles carry their own finalPrice
 # pairs), but every product page embeds the main product's price in analytics
@@ -79,18 +94,9 @@ JSON_PRICE_RE = re.compile(r'"price":\s*([\d.]+)')
 MAIN_PRICE_RE = re.compile(
     r'product-info-price.{0,3000}?data-price-amount="([\d.]+)"\s+'
     r'data-price-type="finalPrice"', re.S)
-GALLERY_IMG_RE = re.compile(r'"(?:img|full)"\s*:\s*"([^"]+)"')
-TITLE_H1_RE = re.compile(
-    r'data-ui-id="page-title-wrapper"[^>]*>\s*([^<]+)')
-OG_IMAGE_RE = re.compile(r'<meta property="og:image" content="([^"]+)"')
 NO_RESULTS_RE = re.compile(
     r"search returned no results|no products matching|"
     r"can.t find (?:any )?products", re.I)
-# an Amasty landing whose slug names an accessory family — e.g. the bare
-# caliber query '30-06' 302s to /30-06-ammo.html — holds no guns at all
-NONGUN_CAT_RE = re.compile(
-    r"ammo|ammunition|optic|scope|magazin|holster|\bparts?\b|-parts?\b|"
-    r"gear|reloading|knives|apparel|cleaning", re.I)
 _USED_TITLE_RE = re.compile(
     r"\bused\b|\bsurplus\b|police\s+trade|\btrade[- ]in\b", re.I)
 # out-of-stock cards render without a price box ('Notify me' instead of Add
@@ -112,13 +118,28 @@ class PSAClient(SiteClient):
 
         seen: set[str] = set()
         pages = [0]  # shared fetch counter so the health canary stays 1 page
-        if query:
-            self._search_text(criteria, emit, seen, query, pages)
-            return
 
-        # no text: walk the gun category tree (used first — see docstring)
+        # A brand landing page is a far tighter starting point than the whole
+        # tree, so try it first; the tree is the fallback for everything else.
         any_cards = False
-        for cat, cat_gun_type in _GUN_CATEGORIES:
+        if query:
+            any_cards = self._walk_brand(criteria, emit, seen, query, pages)
+
+        if not any_cards:
+            any_cards = self._walk_gun_tree(criteria, emit, seen, query, pages)
+
+        if not any_cards and not page_limit_reached(criteria, pages[0]):
+            # zero cards anywhere: no stock at all, or markup drift?
+            # The master gun category always has products — probe it.
+            body = self._get(f"{BASE}/guns.html")
+            self._parse_cards(body, probe=True)
+
+    def _walk_gun_tree(self, criteria, emit, seen: set, query: str,
+                       pages: list) -> bool:
+        """Walk the /guns/ tree (used category first — see docstring), keeping
+        only titles matching `query` when there is one."""
+        any_cards = False
+        for cat, cat_gun_type in self._ordered_categories(query):
             is_used = cat == _USED_CAT
             if criteria.condition == "new" and is_used:
                 continue
@@ -128,84 +149,95 @@ class PSAClient(SiteClient):
                 criteria, emit, seen,
                 lambda p, c=cat: f"{BASE}/{c}.html" + (f"?p={p}" if p > 1 else ""),
                 kind="firearm", gun_type=cat_gun_type, used=is_used,
-                pages=pages)
+                pages=pages, match_title=query)
             any_cards = any_cards or got
-        if not any_cards and not page_limit_reached(criteria, pages[0]):
-            # zero cards in every category: no stock at all, or markup drift?
-            # The master gun category always has products — probe it.
-            body = self._get(f"{BASE}/guns.html")
-            self._parse_cards(body, probe=True)
+        return any_cards
 
-    # ---- text route: Amasty search + redirect-aware pagination ------------
+    @staticmethod
+    def _ordered_categories(query: str) -> list[tuple]:
+        """_GUN_CATEGORIES, but with any category the query names pulled to the
+        front ('shotgun' -> guns/shotguns, 'pistol' -> guns/handguns, whose
+        implied gun_type carries the word its slug doesn't).
 
-    def _search_text(self, criteria, emit, seen: set, query: str, pages: list,
-                     requeried: bool = False):
-        first_url = f"{BASE}/catalogsearch/result/?q={quote_plus(query)}"
-        if page_limit_reached(criteria, pages[0]):
-            return
-        body = self._get(first_url)
-        pages[0] += 1
+        This matters because `pages` is one budget shared across the whole
+        walk: on a capped search the categories visited first are the only ones
+        visited at all, and without this a keyword search for 'shotgun' spends
+        every page on used handguns and returns nothing."""
+        words = {w for w in re.findall(r"[a-z]+", query.lower()) if len(w) > 2}
+        if not words:
+            return list(_GUN_CATEGORIES)
 
-        if PRODUCT_PAGE_RE.search(body):
-            # exact-match query 302'd all the way to one product's page
-            listing = self._parse_product_page(body)
-            if listing and listing.url not in seen:
-                seen.add(listing.url)
-                if self.passes(criteria, listing):
-                    emit(listing)
-            return
+        def names(cat: str, gun_type: str) -> str:
+            return f"{cat} {gun_type}"
 
-        kind, used, base_url = "", False, None
-        canon = self._canonical(body)
-        if canon and "/catalogsearch/" not in canon:
-            # Amasty redirected to a category landing page; paginate THAT (the
-            # redirect drops p=), and inherit its categorization
-            base_url = canon.split("#")[0].split("?")[0].rstrip("/")
-            path = urlparse(canon).path
-            kind = "firearm" if path.startswith("/guns/") else ""
-            used = _USED_CAT.split("/")[-1] in canon
-            if (criteria.hide_accessories and not kind
-                    and "/brands/" not in path
-                    and NONGUN_CAT_RE.search(path.rsplit("/", 1)[-1])):
-                # landed in an accessory category ('30-06' -> /30-06-ammo.html:
-                # their popularity mapping favors ammo for bare calibers).
-                # Nothing there is a gun — re-ask with gun context instead;
-                # '30-06 rifle' maps to their 30-06-rifles gun category.
-                if not requeried:
-                    for suffix in ("rifle", "pistol", "shotgun"):
-                        self._search_text(criteria, emit, seen,
-                                          f"{query} {suffix}", pages,
-                                          requeried=True)
-                return
+        # stable: keeps the used-first ordering within each group, which the
+        # used/new tagging depends on
+        return sorted(_GUN_CATEGORIES,
+                      key=lambda c: not any(w in names(*c) or w.rstrip("s") in names(*c)
+                                            for w in words))
 
-        def url_for(p: int) -> str:
-            if p == 1:
-                return first_url
-            if base_url:
-                return f"{base_url}?p={p}"
-            return f"{first_url}&p={p}"
+    # ---- text route: brand landing pages (their search is off limits) ------
 
-        # synthetic gun-context re-queries exist only to recover the caliber's
-        # guns from loose native grids — hold them to a strict caliber match
-        # (the lenient unknown-caliber-keep policy stays for the user's own
-        # query, whose relevance the site itself ranked)
-        self._walk(criteria, emit, seen, url_for, kind=kind, gun_type="",
-                   used=used, pages=pages, first_body=body,
-                   require_caliber=criteria.caliber if requeried else "")
+    def _walk_brand(self, criteria, emit, seen: set, query: str,
+                    pages: list) -> bool:
+        """Walk the brand landing page for whichever brand the query or the
+        manufacturer filter names. Returns True if one held products."""
+        for url in self._brand_urls(criteria, query):
+            try:
+                got = self._walk(
+                    criteria, emit, seen,
+                    lambda p, u=url: u + (f"?p={p}" if p > 1 else ""),
+                    kind="", gun_type="", used=False, pages=pages,
+                    match_title=query)
+            except FetchError as e:
+                if e.status == 404:
+                    continue  # not their spelling of the brand; try the next
+                raise
+            if got:
+                return True
+        return False
+
+    @staticmethod
+    def _brand_urls(criteria: SearchCriteria, query: str) -> list[str]:
+        """Candidate brand landing URLs, best guess first. Empty when neither
+        the manufacturer filter nor the head of the query names a brand we
+        know — the caller then falls back to the category tree."""
+        from . import brands
+        name = brands.canonical(criteria.manufacturer)
+        if not name:
+            # 'ruger 10/22' -> Ruger. Longest leading phrase wins, so a
+            # two-word maker ('smith wesson 686') beats its first word.
+            words = query.split()
+            for n in (3, 2, 1):
+                name = brands.canonical(" ".join(words[:n]))
+                if name:
+                    break
+        if not name:
+            return []
+        # PSA is inconsistent about '&': 'smith-wesson' but 'heckler-and-koch',
+        # and some brands only exist under a fuller alias ('savage-arms', not
+        # 'savage'). Try the canonical spelling both ways, then the aliases.
+        slugs: list[str] = []
+        for n in [name, *brands.ALIASES.get(name, [])]:
+            for amp in (" ", " and "):
+                s = _slugify(n.replace("&", amp))
+                if s and s not in slugs:
+                    slugs.append(s)
+        return [f"{BASE}/brands/{s}.html" for s in slugs[:4]]
 
     # ---- shared page walk ---------------------------------------------------
 
     def _walk(self, criteria, emit, seen: set, url_for_page, kind: str,
               gun_type: str, used: bool, pages: list,
               first_body: str | None = None,
-              require_caliber: str = "") -> bool:
+              match_title: str = "") -> bool:
         """Walk ?p=1,2,... until an empty or all-duplicate page (Magento
-        repeats the last page for out-of-range p). With require_caliber set
-        (synthetic gun-context re-queries), only title-caliber matches emit,
-        and the walk stops once a relevance-ordered page stops producing any —
-        the loose tail of a native grid never gets better. Returns True if
-        any card parsed."""
-        from . import calibers
+        repeats the last page for out-of-range p). With match_title set, only
+        titles containing every word of it are emitted — these pages are whole
+        categories, so the keyword filter that the site's own (disallowed)
+        search would have applied has to happen here. Returns True if any card
+        parsed, which is how the caller tells a real category from a wrong
+        brand-slug guess."""
         any_cards = False
         for page in itertools.count(1):
             if page == 1 and first_body is not None:
@@ -220,17 +252,13 @@ class PSAClient(SiteClient):
                 break
             any_cards = True
             new_on_page = 0
-            matched_on_page = 0
             for listing in cards:
                 if listing.url in seen:
                     continue
                 seen.add(listing.url)
                 new_on_page += 1
-                if require_caliber and (
-                        not listing.caliber
-                        or not calibers.match(require_caliber, listing.caliber)):
+                if match_title and not _title_matches(match_title, listing.title):
                     continue
-                matched_on_page += 1
                 if used:
                     listing.condition = "used"
                     listing.condition_grade = ""
@@ -248,8 +276,6 @@ class PSAClient(SiteClient):
                 emit(listing)
             if new_on_page == 0:
                 break  # past the end (or a repeated last page)
-            if require_caliber and matched_on_page == 0:
-                break  # relevance ran dry for the synthetic query
             time.sleep(0.6)
         return any_cards
 
@@ -258,7 +284,7 @@ class PSAClient(SiteClient):
     def _get(self, url: str) -> str:
         for attempt in (1, 2):
             try:
-                return fetch(url, timeout=40)
+                return fetch(url, timeout=40, impersonate=IMPERSONATE)
             except FetchError as e:
                 if e.status in (403, 429, 503):
                     if attempt == 1:
@@ -268,15 +294,11 @@ class PSAClient(SiteClient):
                         continue
                     raise ClientBlocked(
                         f"palmettostatearmory.com returned HTTP {e.status} — "
-                        "blocked or Cloudflare waiting room engaged.") from e
+                        "Cloudflare challenged this page. If it is a category "
+                        f"URL, re-probe the {IMPERSONATE} fingerprint; their "
+                        "search endpoint is disallowed and always answers "
+                        "this.") from e
                 raise
-
-    @staticmethod
-    def _canonical(body: str) -> str:
-        m = CANONICAL_RE.search(body)
-        if not m:
-            return ""
-        return m.group(1) or m.group(2) or ""
 
     def _parse_cards(self, body: str, probe: bool) -> list[Listing]:
         marks = list(CARD_RE.finditer(body))
@@ -341,32 +363,6 @@ class PSAClient(SiteClient):
                     pass
         return None
 
-    def _parse_product_page(self, body: str) -> Listing | None:
-        tm = TITLE_H1_RE.search(body)
-        title = _strip_tags(tm.group(1)) if tm else ""
-        url = self._canonical(body)
-        if not title or not url:
-            return None
-        price = None
-        for rex in (JSON_PRICE_RE, MAIN_PRICE_RE):
-            pm = rex.search(body)
-            if pm:
-                try:
-                    price = float(pm.group(1))
-                    break
-                except ValueError:
-                    pass
-        om = OG_IMAGE_RE.search(body) or GALLERY_IMG_RE.search(body)
-        condition = "used" if _USED_TITLE_RE.search(title) else "new"
-        return self._make_listing(
-            url=url,
-            title=title,
-            image=(om.group(1).replace("\\/", "/") if om else ""),
-            condition=condition,
-            condition_grade="new" if condition == "new" else "",
-            price=price,
-        )
-
     # ---- listing construction (overridden by the ammo/parts subclasses) ----
 
     def _make_listing(self, *, url, title, image, condition, condition_grade,
@@ -385,11 +381,11 @@ class PSAClient(SiteClient):
 
 
 class _PSAVerticalClient(PSAClient):
-    """Shared ammo/parts PSA behavior. No text query → walk the vertical's
-    category landing pages (curated → tiles tagged with `_KIND`). Text query →
-    the Amasty search route, paginated via the canonical, WITHOUT the guns-only
-    accessory-category re-query (for ammo/parts, landing on an ammo/parts
-    category is the goal). Relevance is enforced by passes() either way.
+    """Shared ammo/parts PSA behavior: walk the vertical's category landing
+    pages (curated → tiles tagged with `_KIND`), filtering titles by the
+    keyword when there is one. No brand-landing shortcut — a brand page mixes
+    every vertical, so for ammo/parts the vertical's own categories are both
+    tighter and better tagged. Relevance is enforced by passes() either way.
     Subclasses set vertical/name/canary + `_CATEGORIES`/`_KIND`.
     """
     _CATEGORIES: list = []
@@ -415,48 +411,17 @@ class _PSAVerticalClient(PSAClient):
                 or calibers.search_term(criteria.caliber)
         seen: set[str] = set()
         pages = [0]
-        if query:
-            self._search_text_simple(criteria, emit, seen, query, pages)
-            return
         for cat in self._CATEGORIES:
             try:
                 self._walk(
                     criteria, emit, seen,
                     lambda p, c=cat: f"{BASE}/{c}.html" + (f"?p={p}" if p > 1 else ""),
-                    kind=self._KIND, gun_type="", used=False, pages=pages)
+                    kind=self._KIND, gun_type="", used=False, pages=pages,
+                    match_title=query)
             except FetchError as e:
                 if e.status == 404:
                     continue  # slug not a real category — skip it
                 raise
-
-    def _search_text_simple(self, criteria, emit, seen: set, query: str,
-                            pages: list):
-        first_url = f"{BASE}/catalogsearch/result/?q={quote_plus(query)}"
-        if page_limit_reached(criteria, pages[0]):
-            return
-        body = self._get(first_url)
-        pages[0] += 1
-        if PRODUCT_PAGE_RE.search(body):
-            listing = self._parse_product_page(body)
-            if listing and listing.url not in seen:
-                seen.add(listing.url)
-                if self._KIND:
-                    listing.extra["kind"] = self._KIND
-                if self.passes(criteria, listing):
-                    emit(listing)
-            return
-        base_url = None
-        canon = self._canonical(body)
-        if canon and "/catalogsearch/" not in canon:
-            base_url = canon.split("#")[0].split("?")[0].rstrip("/")
-
-        def url_for(p: int) -> str:
-            if p == 1:
-                return first_url
-            return f"{base_url}?p={p}" if base_url else f"{first_url}&p={p}"
-
-        self._walk(criteria, emit, seen, url_for, kind=self._KIND, gun_type="",
-                   used=False, pages=pages, first_body=body)
 
 
 @register
@@ -487,3 +452,39 @@ class PSAPartsClient(_PSAVerticalClient):
 
 def _strip_tags(s: str) -> str:
     return re.sub(r"<[^>]+>", "", _html.unescape(s or "")).strip()
+
+
+def _slugify(s: str) -> str:
+    """Brand name -> PSA category slug ('Sig Sauer' -> 'sig-sauer')."""
+    return re.sub(r"-+", "-", re.sub(r"[^a-z0-9]+", "-", (s or "").lower())).strip("-")
+
+
+def _title_matches(query: str, title: str) -> bool:
+    """Does the title satisfy every word of the query? Punctuation is stripped
+    INSIDE each whitespace-separated word but words are kept apart, so '10/22'
+    becomes one token '1022' and matches '10-22' and '10/22' — PSA writes model
+    numbers all three ways — without '10' and '22' drifting apart to match
+    'American 22LR 10rd'.
+
+    A word STARTING with a digit ('22', '9mm', '300') has to line up with the
+    front of a whole title word, or a longer number swallows it: '.22' should
+    find '22LR' but not '2022', and '9mm' must not match inside '7.62x39mm'.
+    Words starting with a letter stay loose (plain substring), since the site
+    hyphenates and fuses names unpredictably."""
+    words = [re.sub(r"[^a-z0-9]+", "", w) for w in query.lower().split()]
+    toks = [t for t in (re.sub(r"[^a-z0-9]+", "", w)
+                        for w in title.lower().split()) if t]
+    flat = "".join(toks)
+    for word in words:
+        if not word:
+            continue
+        if word[0].isdigit():
+            # equal, or a prefix that isn't cut mid-number ('22' -> '22lr' yes,
+            # '22' -> '2255' no)
+            if not any(t == word or (t.startswith(word)
+                                     and not t[len(word):len(word) + 1].isdigit())
+                       for t in toks):
+                return False
+        elif word not in flat:
+            return False
+    return True
