@@ -12,7 +12,11 @@ services:
     plan: free
     buildCommand: pip install -r requirements.txt
     startCommand: python app.py
-    healthCheckPath: /api/verticals
+    # Purpose-built liveness endpoint (api_v1.py): cheap, dependency-free, and
+    # contractually stable — unlike /api/verticals, which is real app data and
+    # may change shape. Deliberately not /readyz: Render should not pull the
+    # instance out of rotation while the fact store is still loading.
+    healthCheckPath: /api/v1/healthz
     autoDeploy: true
     envVars:
       - key: PYTHON_VERSION
@@ -41,6 +45,25 @@ services:
       # (guns.com, Cabela's) scraping in the cloud and off your home data.
       - key: GS_REMOTE_SITES
         value: "*"
+      # ---- mobile app (see docs/mobile-platform-plan.md) ----
+      # May the iOS/Android app show a link out to a retailer's listing page?
+      # Both stores restrict apps that facilitate firearm/ammunition purchase
+      # (§2), so this is a live policy switch, not a build-time constant: with
+      # it off the server never sends listing URLs to a mobile client at all.
+      # Leave it off until an approved build says otherwise, and remember it
+      # applies to every installed copy the moment it changes.
+      - key: GS_MOBILE_LISTING_LINKS
+        value: "false"
+      # Oldest app build allowed to call /api/v1. Raise it to cut off a build
+      # that must stop talking to the server; those clients get 426 and show
+      # their upgrade screen instead of failing in unpredictable ways.
+      - key: GS_MIN_CLIENT_VERSION
+        value: "0.0.0"
+      # Browser origins allowed to call /api/v1 (Expo web builds / local dev).
+      # Native iOS and Android are not subject to CORS, so production stays
+      # empty — every entry here is a real widening of who can call the API.
+      - key: GS_CORS_ORIGINS
+        value: ""
     # ---- upgrading to always-on + durable stats (paid Starter plan) ----
     # The free plan sleeps after 15 min idle and has no persistent disk, so
     # the stats DB resets on each deploy/restart. To keep stats forever:
@@ -51,3 +74,13 @@ services:
     #   name: stats
     #   mountPath: /data
     #   sizeGB: 1
+    #
+    # ---- optional: build from the Dockerfile instead of the python runtime --
+    # There is now a Dockerfile that runs identically here and on Cloud Run.
+    # Switching Render to it makes the two platforms bit-identical (same
+    # image, same curl binary, same Python) and removes the runtime drift that
+    # would otherwise make the Cloud Run standby a surprise. It is left off by
+    # default only because it changes how the live service builds:
+    #   runtime: docker
+    #   dockerfilePath: ./Dockerfile
+    #   (and drop buildCommand / startCommand / PYTHON_VERSION)
