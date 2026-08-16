@@ -1,0 +1,66 @@
+{
+  "$schema": "https://raw.githubusercontent.com/expo/eas-cli/main/schema/eas.schema.json",
+  "cli": {
+    "version": ">= 12.0.0",
+    "appVersionSource": "remote"
+  },
+  "build": {
+    "//": [
+      "Four profiles, one per audience. The only thing that ever differs",
+      "between them is which backend the binary points at and how it is",
+      "signed — never app behaviour, which is server-flagged (/api/v1/meta).",
+      "",
+      "appVersionSource=remote means EAS owns build numbers. Nobody edits an",
+      "iOS buildNumber or an Android versionCode by hand; a duplicate is the",
+      "single most common cause of a rejected upload."
+    ],
+    "base": {
+      "node": "22.22.2"
+    },
+    "development": {
+      "extends": "base",
+      "developmentClient": true,
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_API_URL": "http://localhost:8777"
+      },
+      "ios": { "simulator": true }
+    },
+    "preview": {
+      "extends": "base",
+      "distribution": "internal",
+      "channel": "preview",
+      "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://gun-scout.onrender.com"
+      },
+      "android": { "buildType": "apk" }
+    },
+    "production": {
+      "extends": "base",
+      "distribution": "store",
+      "channel": "production",
+      "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://gun-scout.onrender.com"
+      },
+      "android": { "buildType": "app-bundle" }
+    }
+  },
+  "submit": {
+    "production": {
+      "ios": {
+        "//": "ascAppId and the Apple IDs are filled in after the app record exists in App Store Connect; they are not secrets.",
+        "appleId": "REPLACE_WITH_APPLE_ID",
+        "ascAppId": "REPLACE_WITH_ASC_APP_ID",
+        "appleTeamId": "REPLACE_WITH_TEAM_ID"
+      },
+      "android": {
+        "//": "Service-account JSON stays out of the repo; point this at a path supplied by CI or a local file listed in .gitignore.",
+        "serviceAccountKeyPath": "../secrets/play-service-account.json",
+        "track": "internal",
+        "releaseStatus": "draft"
+      }
+    }
+  }
+}

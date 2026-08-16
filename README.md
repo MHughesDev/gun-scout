@@ -30,6 +30,20 @@ sleeps after 15 min idle (first visit takes ~30 s to wake) and has no
 persistent disk, so stats reset on each deploy — the upgrade path to
 always-on + durable stats (~$7/mo) is commented in `render.yaml`.
 
+### Container / Google Cloud Run (the scale-out path)
+
+`Dockerfile` builds an image that runs identically on Render and Cloud Run —
+both inject `PORT`, which is all the app needs. Render stays production;
+`deploy/cloudrun/service.yaml` and `deploy/cloudbuild.yaml` keep the Cloud Run
+option a deploy rather than a project.
+
+Two things there are correctness constraints, not tuning: the service is
+pinned to **one instance** (searches and the stats fact store live in process
+memory), and CPU must be **always allocated** (the stat flusher and job sweeper
+work between requests). Lifting the first needs the state externalization in
+[`docs/mobile-platform-plan.md`](docs/mobile-platform-plan.md) §4.2 — which is
+also what would make stats survive a redeploy on the free tier.
+
 ### Any other host
 
 To deploy anywhere else (Railway / Fly / a VPS):
@@ -124,6 +138,28 @@ value on both the deployment and the relay machine so only you can push.
 - Search history never reaches the server (it lives in each visitor's browser
   sessionStorage, inputs only), and results evaporate from RAM ~15 minutes
   after a search finishes — there's nothing user-identifying to store or leak.
+
+## Mobile app
+
+`mobile/` is a React Native (Expo) client for iOS and Android — search, live
+results, and the market stats — talking to a versioned API (`/api/v1`,
+`api_v1.py`) that is kept stable separately from the web UI's endpoints,
+because an installed binary can't be redeployed alongside the server.
+
+```bash
+cd mobile && npm install && npm start
+```
+
+Read [`docs/mobile-platform-plan.md`](docs/mobile-platform-plan.md) before
+working on it. In particular §2: both app stores restrict apps that facilitate
+firearm or ammunition purchase, so whether the app may show a link out to a
+retailer is a **server-side switch** (`GS_MOBILE_LISTING_LINKS`, off by
+default) enforced in the API, and the product is framed as market research
+rather than shopping.
+
+```bash
+python -m unittest discover -s tests    # API contract tests
+```
 
 ## Filters
 
