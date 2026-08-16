@@ -7,7 +7,10 @@ node_modules/
 .expo/
 dist/
 web-build/
-expo-env.d.ts
+# expo-env.d.ts is deliberately NOT ignored: `expo start` regenerates it
+# locally, but CI only runs `npm ci && tsc`, and without it the ambient Expo
+# types (CSS and asset imports, EXPO_PUBLIC_* env vars) don't exist and the
+# typecheck fails on a project that's perfectly fine.
 
 # Native
 .kotlin/
