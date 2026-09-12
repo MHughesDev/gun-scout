@@ -1,0 +1,665 @@
+/* ============================================================================
+   Gun Scout — "liquid glass" design system
+   ----------------------------------------------------------------------------
+   One shared sheet for every page: design tokens, the atmospheric environment
+   layer, the glass surface ladder, and the pill-shaped control vocabulary.
+   Page sheets layer their own layout on top and should only ever reach for the
+   tokens below — never raw hex.
+
+   Surface ladder (spec §4):
+     layer 0  the page itself: soft gradient + blurred colour blobs
+     layer 1  --surface-1  ordinary glass cards and rails
+     layer 2  --surface-2  popovers, dialogs, floating toolbars
+     layer 3  --surface-solid  dense tables, long text, charts — no blur behind
+              text that has to be read for minutes at a time.
+   ========================================================================== */
+
+:root {
+  color-scheme: light;
+
+  /* --- environment ------------------------------------------------------ */
+  --bg: #F6F7FB;
+  --bg-grad: linear-gradient(160deg, #EEF3FF 0%, #F6F7FB 42%, #FBF3FA 100%);
+  --blob-a: rgba(117, 172, 255, .38);   /* ice blue   */
+  --blob-b: rgba(138, 112, 255, .26);   /* lavender   */
+  --blob-c: rgba(103, 215, 232, .26);   /* pale cyan  */
+  --blob-d: rgba(255, 190, 214, .28);   /* soft peach */
+
+  /* --- glass surfaces --------------------------------------------------- */
+  --surface-1: rgba(255, 255, 255, .60);
+  --surface-1-hi: rgba(255, 255, 255, .74);   /* hover / active glass       */
+  --surface-2: rgba(255, 255, 255, .82);      /* elevated: popovers, modals */
+  --surface-solid: #FDFDFF;                   /* tables, charts, long text  */
+  --surface-sunken: rgba(255, 255, 255, .45); /* inputs, wells              */
+  --surface-faint: rgba(255, 255, 255, .30);  /* decorative only            */
+
+  --glass-border: rgba(255, 255, 255, .70);
+  --glass-border-hi: rgba(255, 255, 255, .92);
+  --hairline: #DEE4F0;            /* real 1px separators, chart grid lines   */
+  --border: var(--hairline);      /* legacy alias — the canvas reads this    */
+  --panel: var(--surface-1);      /* legacy alias                            */
+  --panel2: var(--surface-sunken);/* legacy alias                            */
+
+  --blur-1: 20px;
+  --blur-2: 34px;
+
+  /* --- type ------------------------------------------------------------- */
+  --text: #172033;
+  --text-hi: #0E1726;
+  --muted: #697386;
+  --on-accent: #FFFFFF;   /* text on a saturated fill  */
+  --on-bright: #0B1220;   /* text on a pastel fill     */
+
+  /* --- brand ------------------------------------------------------------ */
+  --accent: #5B8CFF;
+  --accent-ink: #2F5BD6;          /* accent as *text* — AA on --bg          */
+  --accent-fill: linear-gradient(135deg, #5B8CFF 0%, #7A6BFF 100%);
+  --accent-solid: #3A62E8;        /* flat fallback for the gradient         */
+  --accent-soft: rgba(91, 140, 255, .16);
+  --purple: #8A70FF;
+  --cyan: #67D7E8;
+  --pink: #E8A8FF;
+
+  --ok: #45C98A;        --ok-ink: #0F7A4E;
+  --warn: #E8B44B;      --warn-ink: #8A5A00;
+  --err: #F56F75;       --err-ink: #C8323C;
+  --accent2: var(--ok); /* legacy alias */
+
+  /* Chart / multi-series palette (ballistics loadouts, legend swatches).
+     Mid-tone, ≥3:1 against --surface-solid so lines and legend text both
+     read on the near-solid plot surface. */
+  --series-1: #2F6BE8;
+  --series-2: #0E9F6E;
+  --series-3: #B26A00;
+  --series-4: #D93F4C;
+  --series-5: #7A4FE0;
+  --series-6: #0E8FA8;
+
+  /* Scrim behind elevated/modal glass (tutorial spotlight, lightbox). */
+  --scrim: rgba(12, 18, 32, .55);
+  --zone-vital: rgba(15, 122, 78, .10);
+
+  /* --- shape ------------------------------------------------------------ */
+  --r-xs: 10px;
+  --r-sm: 14px;
+  --r-md: 20px;
+  --r-lg: 26px;
+  --r-xl: 32px;
+  --r-pill: 999px;
+
+  /* --- light ------------------------------------------------------------ */
+  --shadow-1: 0 10px 30px rgba(30, 50, 90, .08);
+  --shadow-2: 0 18px 48px rgba(30, 50, 90, .14);
+  --shadow-pop: 0 24px 64px rgba(22, 34, 66, .22);
+  --inset-hi: inset 0 1px 0 rgba(255, 255, 255, .65);
+  --ring: 0 0 0 3px rgba(91, 140, 255, .32);
+
+  /* --- motion ----------------------------------------------------------- */
+  --spring: cubic-bezier(.34, 1.42, .5, 1);
+  --ease: cubic-bezier(.4, 0, .2, 1);
+  --t-fast: .14s;
+  --t-mid: .24s;
+
+  /* height the floating header occupies — anything sticky clears it */
+  --sticky-top: 74px;
+}
+
+@media (max-width: 760px) { :root { --sticky-top: 64px; } }
+
+/* Dark mode = smoked glass, not black (spec §28). Follows the system unless
+   the header toggle has stamped an explicit choice on <html>. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #080B12;
+    --bg-grad: linear-gradient(160deg, #0B1020 0%, #080B12 45%, #0F0C1A 100%);
+    --blob-a: rgba(74, 124, 224, .30);
+    --blob-b: rgba(122, 96, 240, .26);
+    --blob-c: rgba(60, 170, 195, .20);
+    --blob-d: rgba(190, 110, 190, .18);
+
+    --surface-1: rgba(20, 24, 34, .65);
+    --surface-1-hi: rgba(30, 36, 50, .78);
+    --surface-2: rgba(24, 29, 41, .86);
+    --surface-solid: #101521;
+    --surface-sunken: rgba(255, 255, 255, .05);
+    --surface-faint: rgba(255, 255, 255, .04);
+
+    --glass-border: rgba(255, 255, 255, .10);
+    --glass-border-hi: rgba(255, 255, 255, .20);
+    --hairline: #262E3D;
+
+    --text: #F5F7FA;
+    --text-hi: #FFFFFF;
+    --muted: #96A1B4;
+    --on-accent: #FFFFFF;
+    --on-bright: #0B1220;
+
+    --accent-ink: #8FB4FF;
+    --accent-soft: rgba(91, 140, 255, .20);
+    --ok-ink: #55D89A;
+    --warn-ink: #EFC166;
+    --err-ink: #FF8F94;
+
+    --series-1: #6FA8FF;
+    --series-2: #45C98A;
+    --series-3: #E8B44B;
+    --series-4: #FF8F94;
+    --series-5: #A98BFF;
+    --series-6: #67D7E8;
+
+    --scrim: rgba(3, 6, 12, .74);
+    --zone-vital: rgba(69, 201, 138, .08);
+
+    --shadow-1: 0 10px 30px rgba(0, 0, 0, .40);
+    --shadow-2: 0 18px 48px rgba(0, 0, 0, .50);
+    --shadow-pop: 0 24px 64px rgba(0, 0, 0, .62);
+    --inset-hi: inset 0 1px 0 rgba(255, 255, 255, .08);
+    --ring: 0 0 0 3px rgba(91, 140, 255, .40);
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #080B12;
+  --bg-grad: linear-gradient(160deg, #0B1020 0%, #080B12 45%, #0F0C1A 100%);
+  --blob-a: rgba(74, 124, 224, .30);
+  --blob-b: rgba(122, 96, 240, .26);
+  --blob-c: rgba(60, 170, 195, .20);
+  --blob-d: rgba(190, 110, 190, .18);
+
+  --surface-1: rgba(20, 24, 34, .65);
+  --surface-1-hi: rgba(30, 36, 50, .78);
+  --surface-2: rgba(24, 29, 41, .86);
+  --surface-solid: #101521;
+  --surface-sunken: rgba(255, 255, 255, .05);
+  --surface-faint: rgba(255, 255, 255, .04);
+
+  --glass-border: rgba(255, 255, 255, .10);
+  --glass-border-hi: rgba(255, 255, 255, .20);
+  --hairline: #262E3D;
+
+  --text: #F5F7FA;
+  --text-hi: #FFFFFF;
+  --muted: #96A1B4;
+  --on-accent: #FFFFFF;
+  --on-bright: #0B1220;
+
+  --accent-ink: #8FB4FF;
+  --accent-soft: rgba(91, 140, 255, .20);
+  --ok-ink: #55D89A;
+  --warn-ink: #EFC166;
+  --err-ink: #FF8F94;
+
+  --series-1: #6FA8FF;
+  --series-2: #45C98A;
+  --series-3: #E8B44B;
+  --series-4: #FF8F94;
+  --series-5: #A98BFF;
+  --series-6: #67D7E8;
+
+  --scrim: rgba(3, 6, 12, .74);
+  --zone-vital: rgba(69, 201, 138, .08);
+
+  --shadow-1: 0 10px 30px rgba(0, 0, 0, .40);
+  --shadow-2: 0 18px 48px rgba(0, 0, 0, .50);
+  --shadow-pop: 0 24px 64px rgba(0, 0, 0, .62);
+  --inset-hi: inset 0 1px 0 rgba(255, 255, 255, .08);
+  --ring: 0 0 0 3px rgba(91, 140, 255, .40);
+}
+
+/* ============================ base ======================================= */
+
+* { box-sizing: border-box; }
+
+html { background: var(--bg); }
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  color: var(--text);
+  background: var(--bg);
+  font: 14px/1.5 system-ui, -apple-system, "Segoe UI", Inter, Roboto,
+        "Helvetica Neue", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Layer 0 — the atmosphere the glass has something to refract. Fixed so it
+   never scrolls out from under a panel, and inert to the pointer. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -2;
+  background: var(--bg-grad);
+  pointer-events: none;
+}
+body::after {
+  content: "";
+  position: fixed;
+  inset: -20vmax;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(38vmax 38vmax at 12% 8%,   var(--blob-a), transparent 62%),
+    radial-gradient(34vmax 34vmax at 88% 2%,   var(--blob-b), transparent 60%),
+    radial-gradient(40vmax 40vmax at 76% 82%,  var(--blob-c), transparent 62%),
+    radial-gradient(30vmax 30vmax at 18% 92%,  var(--blob-d), transparent 60%);
+  filter: blur(28px);
+  animation: drift 46s ease-in-out infinite alternate;
+}
+@keyframes drift {
+  0%   { transform: translate3d(0, 0, 0) scale(1); }
+  50%  { transform: translate3d(1.6%, -1.4%, 0) scale(1.05); }
+  100% { transform: translate3d(-1.4%, 1.8%, 0) scale(1.02); }
+}
+
+a { color: var(--accent-ink); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+::selection { background: var(--accent-soft); }
+
+/* Focus is never sacrificed to the aesthetic (spec §29). */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--r-xs);
+}
+
+/* Visually hidden but still reachable by assistive tech — for a label whose
+   text is carried by a placeholder instead (e.g. the hero search field). */
+.sr-only {
+  position: absolute;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ======================= surface primitives ============================== */
+
+.glass {
+  background: var(--surface-1);
+  -webkit-backdrop-filter: blur(var(--blur-1)) saturate(150%);
+  backdrop-filter: blur(var(--blur-1)) saturate(150%);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-1), var(--inset-hi);
+}
+
+.glass-elevated {
+  background: var(--surface-2);
+  -webkit-backdrop-filter: blur(var(--blur-2)) saturate(170%);
+  backdrop-filter: blur(var(--blur-2)) saturate(170%);
+  border: 1px solid var(--glass-border-hi);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-2), var(--inset-hi);
+}
+
+/* Layer 3 — dense content reads on something opaque. */
+.solid {
+  background: var(--surface-solid);
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-1);
+}
+
+/* ======================== app chrome ===================================== */
+
+.app-header {
+  position: sticky;
+  top: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin: 12px 16px;
+  padding: 10px 12px 10px 20px;
+  background: var(--surface-2);
+  -webkit-backdrop-filter: blur(var(--blur-2)) saturate(170%);
+  backdrop-filter: blur(var(--blur-2)) saturate(170%);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-pill);
+  box-shadow: var(--shadow-1), var(--inset-hi);
+}
+.app-header h1 {
+  margin: 0;
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: -.2px;
+  color: var(--text-hi);
+}
+.app-header .sub { color: var(--muted); font-size: 12px; }
+
+/* Capsule navigation: one glass pill holding the tabs (spec §11). */
+.nav-capsule {
+  margin-left: auto;
+  display: inline-flex;
+  gap: 2px;
+  padding: 4px;
+  background: var(--surface-sunken);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-pill);
+}
+.nav-capsule a {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 500;
+  padding: 7px 16px;
+  border-radius: var(--r-pill);
+  text-decoration: none;
+  white-space: nowrap;
+  transition: color var(--t-fast) var(--ease),
+              background var(--t-fast) var(--ease);
+}
+.nav-capsule a:hover { color: var(--text); background: var(--surface-1); text-decoration: none; }
+.nav-capsule a.active {
+  color: var(--text-hi);
+  font-weight: 600;
+  background: var(--surface-2);
+  box-shadow: var(--shadow-1), var(--inset-hi);
+}
+
+/* ========================== controls ===================================== */
+
+.btn,
+.btn-primary,
+.btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.2;
+  padding: 10px 18px;
+  border-radius: var(--r-pill);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: transform var(--t-fast) var(--spring),
+              background var(--t-fast) var(--ease),
+              border-color var(--t-fast) var(--ease),
+              box-shadow var(--t-fast) var(--ease),
+              color var(--t-fast) var(--ease);
+}
+
+.btn-primary {
+  color: var(--on-accent);
+  background: var(--accent-solid);
+  background-image: var(--accent-fill);
+  border: 1px solid rgba(255, 255, 255, .28);
+  box-shadow: var(--shadow-1), var(--inset-hi);
+}
+.btn-primary:hover:not(:disabled) { transform: scale(1.02); box-shadow: var(--shadow-2), var(--inset-hi); }
+.btn-primary:active:not(:disabled) { transform: scale(.97); }
+
+/* Secondary actions are glass pills. */
+.btn,
+.btn-ghost {
+  color: var(--text);
+  background: var(--surface-1);
+  -webkit-backdrop-filter: blur(var(--blur-1));
+  backdrop-filter: blur(var(--blur-1));
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--inset-hi);
+}
+.btn:hover:not(:disabled),
+.btn-ghost:hover:not(:disabled) {
+  background: var(--surface-1-hi);
+  border-color: var(--glass-border-hi);
+  transform: scale(1.02);
+}
+.btn:active:not(:disabled),
+.btn-ghost:active:not(:disabled) { transform: scale(.97); }
+
+.btn-ghost { font-weight: 500; color: var(--muted); }
+.btn-ghost:hover:not(:disabled) { color: var(--text); }
+
+.btn:disabled,
+.btn-primary:disabled,
+.btn-ghost:disabled {
+  opacity: .45;
+  cursor: default;
+  transform: none;
+  box-shadow: none;
+}
+
+/* Segmented control — tabs inside one glass capsule. */
+.segmented {
+  display: inline-flex;
+  gap: 2px;
+  padding: 4px;
+  background: var(--surface-sunken);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-pill);
+}
+.segmented button {
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--muted);
+  background: none;
+  border: 0;
+  border-radius: var(--r-pill);
+  padding: 7px 15px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color var(--t-fast) var(--ease),
+              background var(--t-fast) var(--ease),
+              transform var(--t-fast) var(--spring);
+}
+.segmented button:hover:not(.active) { color: var(--text); background: var(--surface-1); }
+.segmented button:active { transform: scale(.97); }
+.segmented button.active {
+  color: var(--text-hi);
+  font-weight: 600;
+  background: var(--surface-2);
+  box-shadow: var(--shadow-1), var(--inset-hi);
+}
+
+/* Inputs read as recessed capsules (spec §13). */
+.input,
+input[type="text"],
+input[type="search"],
+input[type="number"],
+input:not([type]),
+select,
+textarea {
+  font: inherit;
+  color: var(--text);
+  background: var(--surface-sunken);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-sm);
+  padding: 9px 13px;
+  transition: border-color var(--t-fast) var(--ease),
+              background var(--t-fast) var(--ease),
+              box-shadow var(--t-fast) var(--ease);
+}
+input::placeholder, textarea::placeholder { color: var(--muted); opacity: .85; }
+input:hover, select:hover, textarea:hover { background: var(--surface-1); }
+input:focus, select:focus, textarea:focus {
+  outline: none;
+  background: var(--surface-1-hi);
+  border-color: var(--accent);
+  box-shadow: var(--ring);
+}
+select {
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 30px;
+  background-image:
+    linear-gradient(45deg, transparent 50%, currentColor 50%),
+    linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position: right 15px center, right 10px center;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+}
+input[type="checkbox"] {
+  width: 17px;
+  height: 17px;
+  margin: 0;
+  accent-color: var(--accent-solid);
+  cursor: pointer;
+}
+
+/* ==================== shared form-layout primitives ======================
+   One canonical .row2 / .row3 / .chk for every page — search.html,
+   stats.html and ballistics.html all built their own copies before this
+   sheet existed. Page CSS that labels a field group (e.g. "#rail label",
+   "#filters label", "#statsBar label") must scope itself with
+   ":not(.chk)" so those uppercase/letter-spaced label rules don't leak
+   onto a checkbox row's inline label. */
+.row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.row3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+.chk {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--text);
+  text-transform: none;
+  letter-spacing: 0;
+  cursor: pointer;
+}
+.chk input { width: auto; flex-shrink: 0; }
+
+/* ============================ pills ====================================== */
+
+.pill-base {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 13px;
+  font-size: 12px;
+  border-radius: var(--r-pill);
+  background: var(--surface-1);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--inset-hi);
+}
+
+/* ========================= scrollbars ==================================== */
+
+* { scrollbar-color: rgba(128, 140, 165, .45) transparent; scrollbar-width: thin; }
+::-webkit-scrollbar { width: 11px; height: 11px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: rgba(128, 140, 165, .38);
+  border: 3px solid transparent;
+  background-clip: content-box;
+  border-radius: var(--r-pill);
+}
+::-webkit-scrollbar-thumb:hover { background: rgba(128, 140, 165, .62); background-clip: content-box; }
+
+/* ======================= theme toggle ==================================== */
+
+.theme-toggle {
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  flex-shrink: 0;
+  font-size: 15px;
+  line-height: 1;
+}
+.theme-toggle .t-dark { display: none; }
+:root[data-theme="dark"] .theme-toggle .t-dark { display: inline; }
+:root[data-theme="dark"] .theme-toggle .t-light { display: none; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .theme-toggle .t-dark { display: inline; }
+  :root:not([data-theme="light"]) .theme-toggle .t-light { display: none; }
+}
+
+/* ===================== floating mobile dock ============================== */
+/* On a phone the nav leaves the header and becomes a floating dock
+   (spec §26) — no markup change, the capsule just detaches. It stays a DOM
+   child of .app-header, and .app-header's backdrop-filter makes it the
+   containing block for any fixed-position descendant (filter/backdrop-filter
+   do this exactly like transform does) — so a fixed nav-capsule would anchor
+   to the header's own box instead of the viewport. Dropping the header's
+   blur at this breakpoint (it keeps its solid-ish surface colour, border and
+   shadow) removes that containing block so "fixed" means the viewport again. */
+@media (max-width: 760px) {
+  body { padding-bottom: 78px; }
+  .app-header {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    background: var(--surface-solid);
+  }
+  .nav-capsule {
+    position: fixed;
+    left: 50%;
+    bottom: 14px;
+    transform: translateX(-50%);
+    z-index: 70;
+    margin: 0;
+    width: max-content;
+    max-width: calc(100vw - 24px);
+    background: var(--surface-2);
+    -webkit-backdrop-filter: blur(var(--blur-2)) saturate(170%);
+    backdrop-filter: blur(var(--blur-2)) saturate(170%);
+    box-shadow: var(--shadow-2), var(--inset-hi);
+  }
+  .nav-capsule a { padding: 10px 18px; }
+}
+
+/* ======================== accessibility ================================== */
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .001ms !important;
+    scroll-behavior: auto !important;
+  }
+  body::after { animation: none; }
+}
+
+/* Where blur is unavailable the glass would turn into flat wash — fall back to
+   a surface opaque enough to keep text legible. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  :root {
+    --surface-1: rgba(255, 255, 255, .92);
+    --surface-1-hi: rgba(255, 255, 255, .97);
+    --surface-2: rgba(255, 255, 255, .97);
+    --surface-sunken: rgba(255, 255, 255, .86);
+  }
+  :root[data-theme="dark"] {
+    --surface-1: rgba(20, 24, 34, .94);
+    --surface-1-hi: rgba(30, 36, 50, .97);
+    --surface-2: rgba(24, 29, 41, .98);
+    --surface-sunken: rgba(255, 255, 255, .07);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --surface-1: rgba(20, 24, 34, .94);
+      --surface-1-hi: rgba(30, 36, 50, .97);
+      --surface-2: rgba(24, 29, 41, .98);
+      --surface-sunken: rgba(255, 255, 255, .07);
+    }
+  }
+}
+
+/* =========================== print ======================================== */
+/* The atmosphere layer lives on body::before/::after — display:none on the
+   page's own elements (e.g. ballistics' "body > *:not(#dope)") never touches
+   a pseudo-element, so without this the gradient and colour blobs would
+   print straight across a page meant to be taped to a rifle stock. Every
+   glass surface also flattens to opaque white so nothing prints as a grey
+   wash or drops out under toner-saving settings. */
+@media print {
+  :root { color-scheme: light; }
+  html, body { background: #fff !important; color: #000 !important; }
+  body::before, body::after { display: none !important; content: none !important; }
+  body { padding-bottom: 0 !important; }
+  .glass, .glass-elevated, .solid, .app-header, .nav-capsule {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    box-shadow: none !important;
+    background: #fff !important;
+  }
+}

@@ -4,257 +4,239 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Gun Scout — Ballistics</title>
+<link rel="stylesheet" href="/glass.css">
+<script src="/theme.js"></script>
 <style>
-  :root {
-    --bg: #12151a; --panel: #1b2027; --panel2: #222933; --border: #2e3742;
-    --text: #e6ebf1; --muted: #8a97a5; --accent: #4da3ff; --accent2: #35c48d;
-    --warn: #e6b04b; --err: #e46a6a;
-  }
-  * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--text);
-         font: 14px/1.45 system-ui, Segoe UI, sans-serif; }
-  header { padding: 14px 22px; border-bottom: 1px solid var(--border);
-           display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
-  header h1 { margin: 0; font-size: 19px; letter-spacing: .5px; }
-  header > span { color: var(--muted); font-size: 12px; }
-  #appNav { margin-left: auto; display: inline-flex; border: 1px solid var(--border);
-            border-radius: 7px; overflow: hidden; align-self: center; }
-  #appNav a { color: var(--muted); font-size: 13px; padding: 6px 16px; cursor: pointer;
-              text-decoration: none; }
-  #appNav a + a { border-left: 1px solid var(--border); }
-  #appNav a:hover { color: var(--text); }
-  #appNav a.active { background: var(--accent); color: #0c1015; font-weight: 600; }
-  #unitBar { display: inline-flex; gap: 6px; align-self: center; }
-  #unitBar button { background: var(--panel2); border: 1px solid var(--border); color: var(--muted);
-                    font-size: 11px; border-radius: 6px; padding: 4px 8px; cursor: pointer; }
-  #unitBar button:hover { color: var(--text); }
+  #unitBar.segmented button { font-size: 11px; padding: 5px 11px; color: var(--text); }
 
-  main { display: grid; grid-template-columns: 330px 1fr; min-height: calc(100vh - 55px); }
-  #rail { background: var(--panel); border-right: 1px solid var(--border);
-          padding: 16px; display: flex; flex-direction: column; gap: 16px; }
+  /* ---------- shell: floating rail beside the chart canvas ---------- */
+  main { display: grid; grid-template-columns: 330px minmax(0, 1fr);
+         gap: 16px; padding: 0 16px 16px; align-items: start; }
+  #rail { position: sticky; top: calc(var(--sticky-top) + 12px);
+          max-height: calc(100vh - var(--sticky-top) - 28px);
+          overflow-y: auto; padding: 20px; display: flex; flex-direction: column;
+          gap: 16px; border-radius: var(--r-xl);
+          background: var(--surface-1);
+          -webkit-backdrop-filter: blur(var(--blur-1)) saturate(150%);
+          backdrop-filter: blur(var(--blur-1)) saturate(150%);
+          border: 1px solid var(--glass-border);
+          box-shadow: var(--shadow-1), var(--inset-hi); }
   #rail h3 { margin: 0; font-size: 11px; text-transform: uppercase; letter-spacing: .8px;
              color: var(--muted); font-weight: 600; display: flex; align-items: center; gap: 8px; }
-  #rail h3 .rst { margin-left: auto; cursor: pointer; color: var(--muted); font-size: 12px; }
-  #rail h3 .rst:hover { color: var(--accent); }
-  #rail label { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: .7px;
+  #rail h3 .rst { margin-left: auto; cursor: pointer; color: var(--accent-ink); font-size: 12px; }
+  #rail h3 .rst:hover { text-decoration: underline; }
+  #rail label:not(.chk) { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: .7px;
                 color: var(--muted); margin: 7px 0 3px; }
-  #rail input, #rail select { width: 100%; background: var(--panel2); color: var(--text);
-    border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; font-size: 13px; }
-  #rail input:focus, #rail select:focus { outline: none; border-color: var(--accent); }
-  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-  .row3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
-  .chk { display: flex !important; align-items: center; gap: 7px; text-transform: none !important;
-         letter-spacing: 0 !important; font-size: 12px !important; color: var(--text) !important; }
-  .chk input { width: auto !important; }
+  #rail input:not([type=checkbox]), #rail select { width: 100%; font-size: 13px; }
   .hint { color: var(--muted); font-size: 11px; margin-top: 3px; }
   .roline { color: var(--muted); font-size: 12px; margin-top: 6px; }
   .roline b { color: var(--text); }
-  details.adv { border: 1px solid var(--border); border-radius: 7px; padding: 6px 9px; margin-top: 8px; }
+  details.adv { border: 1px solid var(--glass-border); border-radius: var(--r-sm);
+                padding: 8px 11px; margin-top: 8px; background: var(--surface-faint); }
   details.adv summary { cursor: pointer; color: var(--muted); font-size: 12px; }
 
   /* loadout chips */
-  #loadoutList { display: flex; flex-direction: column; gap: 6px; }
-  .lo { border: 1px solid var(--border); border-radius: 7px; padding: 7px 9px;
-        background: var(--panel2); font-size: 12px; }
+  #loadoutList { display: flex; flex-direction: column; gap: 7px; }
+  .lo { border: 1px solid var(--glass-border); border-radius: var(--r-sm); padding: 8px 10px;
+        background: var(--surface-sunken); font-size: 12px; }
   .lo .top { display: flex; align-items: center; gap: 8px; }
   .lo .swatch { width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0; }
   .lo .lname { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis;
                white-space: nowrap; font-weight: 600; }
   .lo .rm { background: none; border: 0; color: var(--muted); cursor: pointer; font-size: 14px; }
-  .lo .rm:hover { color: var(--err); }
+  .lo .rm:hover { color: var(--err-ink); }
   .lo small { color: var(--muted); display: block; margin-top: 2px; }
-  #addLoBtn { background: var(--accent); color: #0c1015; font-weight: 600; border: 0;
-              border-radius: 7px; padding: 9px; font-size: 13px; cursor: pointer; width: 100%; }
-  #addLoBtn:hover { filter: brightness(1.1); }
 
   /* picker panel */
-  #picker { border: 1px solid var(--accent); border-radius: 9px; padding: 12px;
-            background: var(--panel2); }
-  #picker h4 { margin: 0 0 4px; font-size: 12px; color: var(--accent); }
+  #picker { border: 1px solid var(--accent); border-radius: var(--r-md); padding: 14px;
+            background: var(--surface-2);
+            -webkit-backdrop-filter: blur(var(--blur-2)) saturate(170%);
+            backdrop-filter: blur(var(--blur-2)) saturate(170%);
+            box-shadow: var(--shadow-2), var(--inset-hi); }
+  #picker h4 { margin: 0 0 4px; font-size: 12px; color: var(--accent-ink); }
   #picker .foot { margin-top: 10px; display: flex; gap: 8px; align-items: center; }
-  #picker .foot button { border: 0; border-radius: 6px; padding: 8px 14px; font-size: 13px;
-                         cursor: pointer; }
-  #pkAdd { background: var(--accent2); color: #0c1015; font-weight: 600; }
-  #pkCancel { background: none; border: 1px solid var(--border) !important; color: var(--muted); }
   #pkPreview { font-size: 11px; color: var(--muted); margin-top: 8px; line-height: 1.5; }
-  #pkPreview b { color: var(--accent2); }
+  #pkPreview b { color: var(--ok-ink); }
 
-  /* quality + sg chips */
-  .qchip { display: inline-block; border-radius: 4px; font-size: 10px; font-weight: 700;
-           padding: 1px 6px; letter-spacing: .3px; cursor: default; }
-  .q-Measured { background: var(--accent2); color: #0c1015; }
-  .q-Trued { background: #5fd4d0; color: #0c1015; }
-  .q-Estimated { background: var(--warn); color: #0c1015; }
-  .q-Nominal { background: var(--border); color: var(--text); }
-  .sgchip { display: inline-block; border-radius: 4px; font-size: 10px; font-weight: 700;
-            padding: 1px 6px; cursor: default; }
-  .sg-stable { background: var(--accent2); color: #0c1015; }
-  .sg-marginal { background: var(--warn); color: #0c1015; }
-  .sg-unstable { background: var(--err); color: #0c1015; }
-  .sg-smoothbore, .sg-unknown { background: var(--border); color: var(--muted); }
+  /* quality + sg chips — pastel fills, so --on-bright works in both themes */
+  .qchip { display: inline-block; border-radius: var(--r-pill); font-size: 10px; font-weight: 700;
+           padding: 2px 8px; letter-spacing: .3px; cursor: default; }
+  .q-Measured { background: var(--ok); color: var(--on-bright); }
+  .q-Trued { background: var(--cyan); color: var(--on-bright); }
+  .q-Estimated { background: var(--warn); color: var(--on-bright); }
+  .q-Nominal { background: var(--surface-sunken); border: 1px solid var(--glass-border); color: var(--muted); }
+  .sgchip { display: inline-block; border-radius: var(--r-pill); font-size: 10px; font-weight: 700;
+            padding: 2px 8px; cursor: default; }
+  .sg-stable { background: var(--ok); color: var(--on-bright); }
+  .sg-marginal { background: var(--warn); color: var(--on-bright); }
+  .sg-unstable { background: var(--err); color: var(--on-bright); }
+  .sg-smoothbore, .sg-unknown { background: var(--surface-sunken); border: 1px solid var(--glass-border);
+                                color: var(--muted); }
 
   /* stage */
-  #stage { padding: 16px 20px; min-width: 0; }
-  #empty { color: var(--muted); padding: 60px 0; text-align: center; }
-  #empty button { background: var(--panel2); border: 1px solid var(--border); color: var(--accent);
-                  border-radius: 7px; padding: 8px 14px; margin: 8px 6px 0; cursor: pointer; font-size: 13px; }
-  #empty button:hover { border-color: var(--accent); }
-  #dataErr { color: var(--err); padding: 24px; border: 1px solid var(--err); border-radius: 9px;
+  #stage { padding: 0 16px 16px; min-width: 0; }
+  #empty { color: var(--muted); padding: 60px 24px; text-align: center;
+           border-radius: var(--r-xl); background: var(--surface-faint);
+           border: 1px solid var(--glass-border); }
+  #dataErr { color: var(--err-ink); padding: 22px; border: 1px solid var(--err);
+             background: var(--surface-1); border-radius: var(--r-md);
              margin-bottom: 14px; display: none; }
-  #dataErr button { background: var(--err); color: #0c1015; border: 0; border-radius: 6px;
-                    padding: 6px 12px; cursor: pointer; margin-left: 10px; }
 
-  /* stat cards */
-  #cards { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 8px; margin-bottom: 10px; }
-  .card { min-width: 240px; background: var(--panel); border: 1px solid var(--border);
-          border-radius: 10px; padding: 10px 12px; font-size: 12px; flex-shrink: 0; }
+  /* stat cards — floating glass bubbles */
+  #cards { display: flex; gap: 12px; overflow-x: auto; padding: 2px 2px 10px; margin-bottom: 6px; }
+  .card { min-width: 240px; background: var(--surface-1);
+          -webkit-backdrop-filter: blur(var(--blur-1)) saturate(150%);
+          backdrop-filter: blur(var(--blur-1)) saturate(150%);
+          border: 1px solid var(--glass-border);
+          box-shadow: var(--shadow-1), var(--inset-hi);
+          border-radius: var(--r-lg); padding: 12px 14px; font-size: 12px; flex-shrink: 0; }
   .card .hd { display: flex; align-items: center; gap: 7px; margin-bottom: 6px; }
   .card .swatch { width: 10px; height: 10px; border-radius: 3px; }
   .card .nm { font-weight: 700; font-size: 12px; flex: 1; min-width: 0;
               overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .card .r { display: flex; justify-content: space-between; gap: 8px; padding: 1.5px 0; }
+  .card .r { display: flex; justify-content: space-between; gap: 8px; padding: 2px 0; }
   .card .r span { color: var(--muted); }
   .card .r b { font-weight: 600; text-align: right; }
-  .card .warnline { color: var(--warn); font-size: 11px; margin-top: 4px; }
-  .card input.pin { width: 54px; background: var(--panel2); border: 1px solid var(--border);
-                    color: var(--text); border-radius: 4px; font-size: 11px; padding: 1px 4px; }
+  .card .warnline { color: var(--warn-ink); font-size: 11px; margin-top: 4px; }
+  .card input.pin { width: 54px; font-size: 11px; padding: 2px 6px; }
 
   /* tabs + chart */
-  #tabs { display: inline-flex; border: 1px solid var(--border); border-radius: 7px;
-          overflow: hidden; margin-bottom: 10px; }
-  #tabs button { background: none; border: 0; color: var(--muted); font-size: 13px;
-                 padding: 6px 13px; cursor: pointer; }
-  #tabs button + button { border-left: 1px solid var(--border); }
-  #tabs button:hover { color: var(--text); }
-  #tabs button.active { background: var(--accent); color: #0c1015; font-weight: 600; }
-  #chartWrap { background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
-               padding: 10px; margin-bottom: 14px; position: relative; }
-  #chart { width: 100%; display: block; cursor: crosshair; }
-  #chartCtl { position: absolute; top: 10px; right: 12px; display: flex; gap: 8px; z-index: 5; }
+  #tabs.segmented { margin-bottom: 12px; }
+  #chartWrap { border-radius: var(--r-lg); padding: 12px; margin-bottom: 14px; position: relative;
+               background: var(--surface-1);
+               -webkit-backdrop-filter: blur(var(--blur-1)) saturate(150%);
+               backdrop-filter: blur(var(--blur-1)) saturate(150%);
+               border: 1px solid var(--glass-border);
+               box-shadow: var(--shadow-1), var(--inset-hi); }
+  #chart { width: 100%; display: block; cursor: crosshair;
+           background: var(--surface-solid); border: 1px solid var(--hairline);
+           border-radius: var(--r-md); }
+  #chartCtl { position: absolute; top: 20px; right: 22px; display: flex; gap: 8px; z-index: 5; }
   #chartCtl label { color: var(--muted); font-size: 11px; display: inline-flex; gap: 5px;
-                    align-items: center; background: var(--panel); padding: 2px 6px;
-                    border-radius: 5px; border: 1px solid var(--border); }
-  #legend { display: flex; gap: 14px; flex-wrap: wrap; padding: 8px 6px 2px; }
+                    align-items: center; background: var(--surface-2); padding: 4px 9px;
+                    border-radius: var(--r-pill); border: 1px solid var(--glass-border); }
+  #legend { display: flex; gap: 14px; flex-wrap: wrap; padding: 10px 6px 2px; }
   #legend span { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
   #legend i { width: 14px; height: 3px; border-radius: 2px; display: inline-block; }
-  #tip { position: absolute; pointer-events: none; background: #10141a; border: 1px solid var(--border);
-         border-radius: 7px; padding: 7px 10px; font-size: 11.5px; z-index: 10; display: none;
-         box-shadow: 0 8px 22px rgba(0,0,0,.5); min-width: 170px; }
+  #tip { position: absolute; pointer-events: none; z-index: 10; display: none;
+         background: var(--surface-2);
+         -webkit-backdrop-filter: blur(var(--blur-2)) saturate(170%);
+         backdrop-filter: blur(var(--blur-2)) saturate(170%);
+         border: 1px solid var(--glass-border-hi); border-radius: var(--r-md);
+         padding: 9px 12px; font-size: 11.5px; color: var(--text);
+         box-shadow: var(--shadow-pop), var(--inset-hi); min-width: 170px; }
   #tip .t { color: var(--muted); margin-bottom: 3px; }
   #tip .l { display: flex; gap: 8px; align-items: baseline; }
   #tip .l i { width: 8px; height: 8px; border-radius: 2px; display: inline-block; flex-shrink: 0; }
   #tip .l small { color: var(--muted); }
-  #busy { height: 3px; background: var(--panel2); border-radius: 2px; overflow: hidden;
+  #busy { height: 3px; background: var(--surface-sunken); border-radius: 2px; overflow: hidden;
           margin-bottom: 8px; visibility: hidden; }
-  #busy i { display: block; height: 100%; width: 40%; background: var(--accent);
+  #busy i { display: block; height: 100%; width: 40%; background: var(--accent-fill);
             animation: slide 1s linear infinite; }
   @keyframes slide { 0% { margin-left: -40%; } 100% { margin-left: 100%; } }
 
-  /* table */
-  #tblCtl { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; flex-wrap: wrap; }
+  /* table — near-solid layer 3 (spec §24) */
+  #tblCtl { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
   #tblCtl label { color: var(--muted); font-size: 12px; }
-  #tblCtl select { background: var(--panel2); color: var(--text); border: 1px solid var(--border);
-                   border-radius: 6px; padding: 5px 8px; font-size: 12px; }
-  #tblCtl button { background: none; border: 1px solid var(--border); color: var(--muted);
-                   border-radius: 6px; padding: 6px 10px; font-size: 12px; cursor: pointer; }
-  #tblCtl button:hover { color: var(--text); border-color: var(--accent); }
+  #tblCtl select { font-size: 12px; }
+  #btWrap { overflow-x: auto; border-radius: var(--r-md);
+            background: var(--surface-solid); border: 1px solid var(--hairline);
+            box-shadow: var(--shadow-1); }
   table { border-collapse: collapse; width: 100%; }
-  th, td { text-align: right; padding: 6px 9px; border-bottom: 1px solid var(--border);
+  th, td { text-align: right; padding: 7px 11px; border-bottom: 1px solid var(--hairline);
            font-size: 12.5px; white-space: nowrap; }
   th { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .6px;
-       position: sticky; top: 0; background: var(--bg); }
+       position: sticky; top: var(--sticky-top); background: var(--surface-solid); }
   th:first-child, td:first-child { text-align: left; }
-  tr:hover td { background: #1a2028; }
-  td.zero { color: var(--accent2); font-weight: 600; }
-  #btWrap { overflow-x: auto; }
+  #bt th .sw { display: inline-block; width: 9px; height: 9px; border-radius: 3px;
+               vertical-align: middle; margin-right: 6px; }
+  tr:hover td { background: var(--accent-soft); }
+  td.zero { color: var(--ok-ink); font-weight: 600; }
   td .pm { color: var(--muted); font-size: 10.5px; }
 
   /* truing */
   #truing { max-width: 640px; }
-  #truing .box { background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
-                 padding: 14px; margin-bottom: 12px; }
-  #truing label { display: block; font-size: 11px; text-transform: uppercase;
+  #truing .box { background: var(--surface-1);
+                 -webkit-backdrop-filter: blur(var(--blur-1)) saturate(150%);
+                 backdrop-filter: blur(var(--blur-1)) saturate(150%);
+                 border: 1px solid var(--glass-border);
+                 box-shadow: var(--shadow-1), var(--inset-hi);
+                 border-radius: var(--r-lg); padding: 18px; margin-bottom: 14px; }
+  #truing label:not(.chk) { display: block; font-size: 11px; text-transform: uppercase;
                   letter-spacing: .7px; color: var(--muted); margin: 8px 0 3px; }
-  #truing input, #truing select { background: var(--panel2); color: var(--text);
-    border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; font-size: 13px; width: 100%; }
-  #truing button { background: var(--accent); color: #0c1015; font-weight: 600; border: 0;
-                   border-radius: 7px; padding: 8px 16px; font-size: 13px; cursor: pointer; margin-top: 10px; }
-  #truing .sess { border: 1px solid var(--border); border-radius: 7px; padding: 7px 10px;
-                  font-size: 12px; margin-top: 6px; display: flex; gap: 10px; align-items: center; }
+  #truing input:not([type=checkbox]), #truing select { width: 100%; }
+  #truing .sess { border: 1px solid var(--glass-border); border-radius: var(--r-sm);
+                  background: var(--surface-faint);
+                  padding: 8px 12px; font-size: 12px; margin-top: 6px; display: flex;
+                  gap: 10px; align-items: center; }
   #truing .sess .del { margin-left: auto; color: var(--muted); cursor: pointer; }
-  #truing .sess .del:hover { color: var(--err); }
-  #truing .stale { color: var(--warn); font-size: 11px; }
+  #truing .sess .del:hover { color: var(--err-ink); }
+  #truing .stale { color: var(--warn-ink); font-size: 11px; }
   #trResult { margin-top: 10px; font-size: 13px; }
-  #trResult b { color: var(--accent2); }
+  #trResult b { color: var(--ok-ink); }
   .note { color: var(--muted); font-size: 11px; margin-top: 12px; max-width: 780px; line-height: 1.5; }
 
-  /* methodology */
-  #methodology { margin-top: 26px; border-top: 1px solid var(--border); padding-top: 14px;
+  /* methodology — long-form text sits on solid ground (spec §4) */
+  #methodology { margin-top: 30px; border-top: 1px solid var(--hairline); padding-top: 18px;
                  max-width: 860px; }
-  #methodology h2 { font-size: 15px; }
-  #methodology h3 { font-size: 13px; margin: 14px 0 4px; color: var(--accent); }
-  #methodology p, #methodology li { font-size: 12.5px; color: var(--muted); line-height: 1.55; }
-  #methodology code { background: var(--panel2); border-radius: 4px; padding: 1px 5px;
-                      font-size: 11.5px; color: var(--text); }
+  #methodology h2 { font-size: 18px; }
+  #methodology h3 { font-size: 13px; margin: 16px 0 4px; color: var(--accent-ink); }
+  #methodology p, #methodology li { font-size: 12.5px; color: var(--muted); line-height: 1.6; }
+  #methodology code { background: var(--surface-sunken); border: 1px solid var(--glass-border);
+                      border-radius: var(--r-xs); padding: 1px 6px; font-size: 11.5px; color: var(--text); }
 
   /* self test */
-  #selftest td.pass { color: var(--accent2); } #selftest td.fail { color: var(--err); }
+  #selftest td.pass { color: var(--ok-ink); } #selftest td.fail { color: var(--err-ink); }
 
   /* ---------- guided tutorial ---------- */
-  #tutBtn { align-self: center; background: var(--accent); color: #0c1015; font-weight: 600;
-            border: 0; border-radius: 6px; padding: 5px 11px; font-size: 12px; cursor: pointer; }
-  #tutBtn:hover { filter: brightness(1.1); }
   .tut-catch { position: fixed; inset: 0; z-index: 8990; cursor: default; }
-  .tut-hole { position: fixed; z-index: 8992; border-radius: 8px; pointer-events: none;
-              box-shadow: 0 0 0 9999px rgba(7,9,13,.82); border: 2px solid var(--accent);
+  .tut-hole { position: fixed; z-index: 8992; border-radius: var(--r-sm); pointer-events: none;
+              box-shadow: 0 0 0 9999px var(--scrim); border: 2px solid var(--accent);
               transition: top .28s cubic-bezier(.4,0,.2,1), left .28s cubic-bezier(.4,0,.2,1),
                           width .28s cubic-bezier(.4,0,.2,1), height .28s cubic-bezier(.4,0,.2,1); }
   .tut-hole.pulse { animation: tutPulse 1.7s ease-in-out infinite; }
   @keyframes tutPulse {
-    0%,100% { box-shadow: 0 0 0 9999px rgba(7,9,13,.82), 0 0 0 0 rgba(77,163,255,.55); }
-    50%     { box-shadow: 0 0 0 9999px rgba(7,9,13,.82), 0 0 0 8px rgba(77,163,255,0); } }
+    0%,100% { box-shadow: 0 0 0 9999px var(--scrim), 0 0 0 0 rgba(91,140,255,.55); }
+    50%     { box-shadow: 0 0 0 9999px var(--scrim), 0 0 0 8px rgba(91,140,255,0); } }
   .tut-box { position: fixed; z-index: 8994; width: 344px; max-width: calc(100vw - 24px);
-             max-height: 80vh; overflow-y: auto; background: #141a22; color: var(--text);
-             border: 1px solid var(--accent); border-radius: 12px; padding: 15px 17px 14px;
-             box-shadow: 0 18px 52px rgba(0,0,0,.62); transition: top .26s ease, left .26s ease; }
+             max-height: 80vh; overflow-y: auto; color: var(--text);
+             background: var(--surface-2);
+             -webkit-backdrop-filter: blur(var(--blur-2)) saturate(170%);
+             backdrop-filter: blur(var(--blur-2)) saturate(170%);
+             border: 1px solid var(--glass-border-hi); border-radius: var(--r-lg);
+             padding: 17px 19px 16px;
+             box-shadow: var(--shadow-pop), var(--inset-hi); transition: top .26s ease, left .26s ease; }
   .tut-box .step { color: var(--muted); font-size: 10.5px; text-transform: uppercase;
                    letter-spacing: .7px; margin-bottom: 5px; }
-  .tut-box h4 { margin: 0 0 8px; font-size: 16px; color: var(--accent); }
+  .tut-box h4 { margin: 0 0 8px; font-size: 16px; color: var(--accent-ink); }
   .tut-box .body { font-size: 13px; line-height: 1.58; color: var(--text); }
-  .tut-box .body b { color: var(--accent2); font-weight: 600; }
-  .tut-box .body .term { color: var(--warn); font-weight: 700; }
-  .tut-box .tut-progress { height: 3px; background: var(--panel2); border-radius: 2px;
+  .tut-box .body b { color: var(--ok-ink); font-weight: 600; }
+  .tut-box .body .term { color: var(--warn-ink); font-weight: 700; }
+  .tut-box .tut-progress { height: 3px; background: var(--surface-sunken); border-radius: 2px;
                            margin-top: 12px; overflow: hidden; }
-  .tut-box .tut-progress i { display: block; height: 100%; background: var(--accent); transition: width .28s; }
+  .tut-box .tut-progress i { display: block; height: 100%; background: var(--accent-fill); transition: width .28s; }
   .tut-box .foot { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
   .tut-box .foot .sp { flex: 1; }
-  .tut-box button { border: 0; border-radius: 7px; padding: 7px 13px; font-size: 12.5px; cursor: pointer; }
-  .tut-box .tut-next { background: var(--accent); color: #0c1015; font-weight: 600; }
-  .tut-box .tut-next:hover { filter: brightness(1.1); }
-  .tut-box .tut-back { background: none; border: 1px solid var(--border); color: var(--muted); }
-  .tut-box .tut-back:hover { color: var(--text); }
-  .tut-box .tut-skip { background: none; color: var(--muted); font-size: 11.5px; padding: 7px 4px; }
-  .tut-box .tut-skip:hover { color: var(--err); }
+  .tut-box .tut-skip:hover { color: var(--err-ink); }
 
   /* ---------- mobile ---------- */
-  @media (max-width: 860px) {
-    header { padding: 10px 14px; row-gap: 9px; gap: 10px; }
-    header h1 { font-size: 17px; }
-    header > span { flex: 1 1 100%; order: 1; }
-    #appNav { margin-left: 0; flex: 1 1 100%; order: 3; display: flex; }
-    #appNav a { flex: 1; text-align: center; padding: 9px 4px; }
-    #unitBar { order: 2; margin-left: auto; }
+  @media (max-width: 760px) {
+    .app-header { margin: 8px 10px; padding: 10px 12px 10px 16px; gap: 10px;
+                  border-radius: var(--r-lg); }
+    .app-header h1 { font-size: 17px; }
+    .app-header .sub { flex: 1 1 100%; order: 1; }
+    #unitBar { order: 2; }
 
-    main { grid-template-columns: 1fr; min-height: 0; }
-    #rail { border-right: 0; border-bottom: 1px solid var(--border); padding: 14px; }
+    main { grid-template-columns: 1fr; padding: 0 10px 10px; gap: 12px; }
+    #rail { position: static; max-height: none; padding: 16px; }
     /* 16px stops mobile Safari/Chrome zooming the page when a field is focused */
     #rail input, #rail select { font-size: 16px; }
 
-    #stage { padding: 14px; }
+    #stage { padding: 0 10px 10px; }
     .card { min-width: 200px; }
     #chartCtl { position: static; margin-bottom: 8px; flex-wrap: wrap; }
-    #tabs { display: flex; width: 100%; }
-    #tabs button { flex: 1; padding: 8px 4px; }
+    #tabs.segmented { display: flex; width: 100%; }
+    #tabs.segmented button { flex: 1; padding: 8px 4px; }
     #truing, .note { max-width: 100%; }
   }
 
@@ -269,17 +251,20 @@
 </style>
 </head>
 <body>
-<header>
+<header class="app-header">
   <h1>Gun Scout</h1>
-  <span>ballistic engine — measured-anchored · physics-forward · uncertainty-quantified</span>
-  <button id="tutBtn" title="Guided walkthrough of every control and abbreviation">▶ Tutorial</button>
-  <div id="unitBar">
+  <span class="sub">ballistic engine — measured-anchored · physics-forward · uncertainty-quantified</span>
+  <button id="tutBtn" class="btn-primary" title="Guided walkthrough of every control and abbreviation">▶ Tutorial</button>
+  <div id="unitBar" class="segmented">
     <button id="uDist" title="range unit">yd</button>
     <button id="uLin" title="drop/drift unit">in</button>
     <button id="uAng" title="angular unit">MOA</button>
     <button id="uTemp" title="temperature unit">°F</button>
   </div>
-  <nav id="appNav">
+  <button class="btn-ghost theme-toggle" type="button" title="Light / dark">
+    <span class="t-light">☾</span><span class="t-dark">☀</span>
+  </button>
+  <nav class="nav-capsule">
     <a href="/">Search</a>
     <a href="/stats">Stats</a>
     <a href="/ballistics" class="active">Ballistics</a>
@@ -288,11 +273,11 @@
 <main>
 <aside id="rail">
   <div id="grpLoadouts">
-    <h3>Loadouts <span style="color:var(--border)">·</span>
+    <h3>Loadouts <span style="color:var(--muted)">·</span>
       <span style="text-transform:none;letter-spacing:0">gun + ammo</span></h3>
     <div id="loadoutList" style="margin-top:8px"></div>
     <div id="picker" style="display:none;margin-top:8px"></div>
-    <button id="addLoBtn" style="margin-top:8px">+ Add loadout</button>
+    <button id="addLoBtn" class="btn-primary" style="margin-top:8px">+ Add loadout</button>
   </div>
 
   <div id="grpCond">
@@ -340,18 +325,18 @@
 </aside>
 
 <section id="stage">
-  <div id="dataErr"><span id="dataErrMsg"></span><button onclick="location.reload()">Retry</button></div>
+  <div id="dataErr"><span id="dataErrMsg"></span><button class="btn-ghost" onclick="location.reload()">Retry</button></div>
   <div id="busy"><i></i></div>
   <div id="empty">
     <p>Build one or more <b>loadouts</b> (a gun firing an ammunition load) to simulate drop,
     drift, velocity, energy, stability and hit probability — with honest uncertainty bands.</p>
-    <button data-demo="0">Demo: Glock 19 · Federal 124gr FMJ</button>
-    <button data-demo="1">Demo: 16″ AR-15 · XM855 62gr</button>
-    <div style="margin-top:14px"><button id="tutStartEmpty" style="border-color:var(--accent);color:var(--accent)">▶ New here? Take the guided tour</button></div>
+    <button class="btn-ghost" data-demo="0">Demo: Glock 19 · Federal 124gr FMJ</button>
+    <button class="btn-ghost" data-demo="1">Demo: 16″ AR-15 · XM855 62gr</button>
+    <div style="margin-top:14px"><button id="tutStartEmpty" class="btn-ghost" style="border-color:var(--accent);color:var(--accent-ink)">▶ New here? Take the guided tour</button></div>
   </div>
   <div id="viz" style="display:none">
     <div id="cards"></div>
-    <div id="tabs">
+    <div id="tabs" class="segmented">
       <button data-tab="traj" class="active">Trajectory</button>
       <button data-tab="wind">Windage</button>
       <button data-tab="vel">Velocity / Energy</button>
@@ -381,8 +366,8 @@
         <label class="chk"><input type="checkbox" id="allCols"> all columns for</label>
         <select id="allColsLo"></select>
         <span style="flex:1"></span>
-        <button id="csvBtn">Export CSV</button>
-        <button id="dopeBtn">Print DOPE card</button>
+        <button id="csvBtn" class="btn-ghost">Export CSV</button>
+        <button id="dopeBtn" class="btn-ghost">Print DOPE card</button>
         <select id="dopeLo"></select>
       </div>
       <div id="btWrap"><table id="bt"><thead></thead><tbody></tbody></table></div>
@@ -401,7 +386,7 @@
           <div><label>Group size (MOA, opt.)</label><input id="trGroup" inputmode="decimal"></div>
         </div>
         <div class="roline">Session conditions (snapshotted): <b id="trCond"></b></div>
-        <button id="trSolve">Check sensitivity &amp; solve</button>
+        <button id="trSolve" class="btn-primary">Check sensitivity &amp; solve</button>
         <div id="trResult"></div>
       </div>
       <div class="box"><b>Past truing sessions</b><div id="trList"></div></div>
@@ -410,7 +395,7 @@
       stability, Litz spin-drift/aero-jump corrections (rifle domain), full atmosphere, 3-D wind
       and optional Coriolis. Muzzle velocity is estimated from a tiered source hierarchy with
       explicit uncertainty; bands are 10th–90th percentiles of a 400-draw Monte Carlo.
-      <a href="#methodology" style="color:var(--accent)">Methodology &amp; sources ↓</a></div>
+      <a href="#methodology">Methodology &amp; sources ↓</a></div>
     <div id="methodology">
       <h2 id="mAnchor">Methodology</h2>
       <h3>Model class</h3>
@@ -470,7 +455,16 @@
 'use strict';
 const $ = id => document.getElementById(id);
 const esc = s => { const d = document.createElement('div'); d.textContent = s ?? ''; return d.innerHTML; };
-const COLORS = ['#4da3ff', '#35c48d', '#e6b04b', '#e46a6a', '#c07ef0', '#5fd4d0'];
+const COLORS = ['#4da3ff', '#35c48d', '#e6b04b', '#e46a6a', '#c07ef0', '#5fd4d0']; // legacy v2 migration only
+const SERIES_N = 6;
+/* Loadout colour is a theme-aware CSS token looked up by index, not a frozen
+   hex — so switching light/dark retints every swatch, chart line and legend
+   without touching stored data. */
+function seriesHex(i) {
+  const v = getComputedStyle(document.documentElement).getPropertyValue('--series-' + (i % SERIES_N + 1)).trim();
+  return v || COLORS[i % COLORS.length];
+}
+function loColor(lo) { return seriesHex(lo.ci || 0); }
 const CLOCKS = [[0,'12 o’clock (head)'],[30,'1'],[60,'2'],[90,'3 o’clock (right)'],[120,'4'],[150,'5'],
   [180,'6 o’clock (tail)'],[210,'7'],[240,'8'],[270,'9 o’clock (left)'],[300,'10'],[330,'11']];
 
@@ -490,7 +484,7 @@ const readTemp = v => U.temp === 'F' ? v : v * 1.8 + 32;
 const LS_KEY = 'gs_ballistics_v2';
 let store = null;
 function defaultStore() {
-  return { v: 2, loadouts: [], migrated: [],
+  return { v: 3, loadouts: [], migrated: [],
     conditions: { temp_f: 59, humidity_pct: 0, alt_mode: 'altitude', altitude_ft: 0,
       station_inhg: 29.92, wind_mph: 10, wind_deg: 90, powder_temp_f: null,
       coriolis_on: false, lat_deg: 45, az_deg: 0, gust_sd: null },
@@ -500,7 +494,17 @@ function defaultStore() {
 function loadStore() {
   try {
     const raw = localStorage.getItem(LS_KEY);
-    if (raw) { store = JSON.parse(raw); if (store.v === 2) return; }
+    if (raw) {
+      store = JSON.parse(raw);
+      if (store.v === 3) return;
+      if (store.v === 2) {   // v2 stored a frozen hex; upgrade to a theme-aware index
+        store.loadouts.forEach(lo => {
+          if (lo.ci == null) lo.ci = Math.max(0, COLORS.indexOf(lo.color));
+          delete lo.color;
+        });
+        store.v = 3; saveStore(); return;
+      }
+    }
   } catch (e) {}
   store = defaultStore();
   try { // one-time v1 migration (spec §10.5): v1 rows become library entries, not loadouts
@@ -657,7 +661,7 @@ function renderLoadouts() {
     const R = results[lo.id];
     const q = R && R.build ? R.build.muzzle.quality : '';
     return `<div class="lo"><div class="top">
-      <span class="swatch" style="background:${lo.color}"></span>
+      <span class="swatch" style="background:${loColor(lo)}"></span>
       <span class="lname" title="${esc(loName(lo))}">${esc(loName(lo))}</span>
       ${q ? `<span class="qchip q-${q}">${q}</span>` : ''}
       <button class="rm" data-i="${i}" title="Remove">✕</button></div></div>`;
@@ -714,7 +718,7 @@ function openPicker() {
     <input id="pkPrec" inputmode="decimal" placeholder="auto by gun type">
     <div class="hint">typical: factory rifle 1.5 · match rifle 0.75 · pistol 4</div>
     <div id="pkPreview"></div>
-    <div class="foot"><button id="pkAdd">Add loadout</button><button id="pkCancel">Cancel</button></div>`;
+    <div class="foot"><button id="pkAdd" class="btn-primary">Add loadout</button><button id="pkCancel" class="btn-ghost">Cancel</button></div>`;
   const fillLoads = () => {
     const gunId = $('pkGun').value;
     const cartId = gunId === '__custom' ? $('pgCart').value : (gunById(gunId) || {}).cartridge;
@@ -756,7 +760,7 @@ function openPicker() {
     } else gun = gunById(gunId);
     if (!gun) return null;
     const loadId = $('pkLoad').value;
-    let lo = { id: 'lo-' + Date.now(), color: COLORS[store.loadouts.length % COLORS.length],
+    let lo = { id: 'lo-' + Date.now(), ci: store.loadouts.length % SERIES_N,
       bc_model: null, precision_moa: parseFloat($('pkPrec').value) || defaultPrec(gun),
       pinned_range_yd: null, temp_sens_override: null, chrono: null, truing: [] };
     if (gunId === '__custom') lo.custom_gun = gun; else lo.gun_id = gunId;
@@ -836,7 +840,7 @@ function renderCards() {
       ['hit90', '90% hit range', `<b>${hit90 != null ? fmtDist(hit90) + ' ' + distLabel() : (R.mc ? '<' + fmtDist(target().step_yd) : '…')}</b>`],
     ].filter(Boolean);
     return `<div class="card"><div class="hd">
-      <span class="swatch" style="background:${lo.color}"></span>
+      <span class="swatch" style="background:${loColor(lo)}"></span>
       <span class="nm" title="${esc(loName(lo))}">${esc(loName(lo))}</span>
       <span class="qchip q-${m.quality}" data-tut="quality" title="${qualTip(m.quality)}">${m.quality}</span></div>
       <div class="r" data-tut="sg"><span>Sg</span>${sgHtml}</div>
@@ -909,6 +913,7 @@ function drawChart() {
   const X = yd => padL + (yd / xMax) * w, Y = v => padT + (1 - (v - yMin) / (yMax - yMin)) * h;
   const css = getComputedStyle(document.documentElement);
   const cMuted = css.getPropertyValue('--muted').trim(), cBorder = css.getPropertyValue('--border').trim();
+  const cZoneVital = css.getPropertyValue('--zone-vital').trim();
   ctx.font = '11px system-ui';
   // grid
   const yTicks = niceTicks(yMin, yMax, 6), xTicks = niceTicks(0, xMax, 8);
@@ -927,7 +932,7 @@ function drawChart() {
   if (mode === 'traj' && t.vital_d_in) {
     const halfDisp = linScale(t.vital_d_in / 2);
     if (halfDisp < yMax && -halfDisp > yMin) {
-      ctx.fillStyle = 'rgba(53,196,141,.07)';
+      ctx.fillStyle = cZoneVital;
       ctx.fillRect(padL, Y(halfDisp), w, Y(-halfDisp) - Y(halfDisp));
     }
   }
@@ -949,13 +954,13 @@ function drawChart() {
     const d = results[lo.id].derived;
     if (d && d.supersonic12Yd && d.supersonic12Yd < xMax && mode !== 'hit') {
       const x1 = X(d.supersonic12Yd), x2 = X(Math.min(d.subsonicYd || xMax, xMax));
-      ctx.fillStyle = hexA(lo.color, 0.05); ctx.fillRect(x1, padT, Math.max(x2 - x1, 2), h);
+      ctx.fillStyle = hexA(loColor(lo), 0.05); ctx.fillRect(x1, padT, Math.max(x2 - x1, 2), h);
     }
   }
   // MC bands
   if (bandsOn) for (const lo of los) {
     const mc = results[lo.id].mc; if (!mc) continue;
-    ctx.fillStyle = hexA(lo.color, 0.16); ctx.beginPath();
+    ctx.fillStyle = hexA(loColor(lo), 0.16); ctx.beginPath();
     let started = false;
     for (const m of mc) { if (!m) continue;
       const v = linScale(mode === 'traj' ? m.dropP90 : m.windP90);
@@ -966,14 +971,14 @@ function drawChart() {
   }
   // series lines
   for (const lo of los) {
-    ctx.strokeStyle = lo.color; ctx.lineWidth = 2; ctx.beginPath();
+    ctx.strokeStyle = loColor(lo); ctx.lineWidth = 2; ctx.beginPath();
     seriesOf(lo).forEach((p, i) => { i ? ctx.lineTo(X(p.yd), Y(p.val)) : ctx.moveTo(X(p.yd), Y(p.val)); });
     ctx.stroke();
     // energy threshold tick
     if (mode === 'energy') {
       const d = results[lo.id].derived;
       if (d && d.energy1000Yd && d.energy1000Yd <= xMax) {
-        ctx.strokeStyle = lo.color; ctx.beginPath();
+        ctx.strokeStyle = loColor(lo); ctx.beginPath();
         ctx.moveTo(X(d.energy1000Yd), Y(1000) - 8); ctx.lineTo(X(d.energy1000Yd), Y(1000) + 8); ctx.stroke();
       }
     }
@@ -985,10 +990,11 @@ function drawChart() {
   ctx.fillText(M.label + ' (' + M.unit() + ')', 0, 0); ctx.restore();
   chartGeom = { X, Y, padL, padT, w, h, xMax, mode };
   $('legend').innerHTML = los.map(lo =>
-    `<span><i style="background:${lo.color}"></i>${esc(loName(lo))}</span>`).join('');
+    `<span><i style="background:${loColor(lo)}"></i>${esc(loName(lo))}</span>`).join('');
 }
 let chartGeom = null;
 function hexA(hex, a) {
+  if (!/^#[0-9a-f]{6}$/i.test(hex)) return hex;
   const n = parseInt(hex.slice(1), 16);
   return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
 }
@@ -1018,7 +1024,7 @@ $('chart').addEventListener('mousemove', e => {
       if (!R.hit) continue;
       let best = R.hit[0];
       for (const hp of R.hit) if (Math.abs(hp.yd - yd) < Math.abs(best.yd - yd)) best = hp;
-      html += `<div class="l"><i style="background:${lo.color}"></i><b>${(best.p * 100).toFixed(0)}%</b></div>`;
+      html += `<div class="l"><i style="background:${loColor(lo)}"></i><b>${(best.p * 100).toFixed(0)}%</b></div>`;
       continue;
     }
     const r = BX.interpRow(R.rows, yd); if (!r) continue;
@@ -1029,7 +1035,7 @@ $('chart').addEventListener('mousemove', e => {
       extra = `<small>lag ${r.lagIn.toFixed(1)}″${Math.abs(r.spinIn) > 0.05 ? ' · spin ' + r.spinIn.toFixed(1) + '″' : ''}</small>`; }
     else if (mode === 'vel') val = Math.round(r.v) + ' fps · M' + r.mach.toFixed(2);
     else val = Math.round(r.energy).toLocaleString() + ' ft·lb';
-    html += `<div class="l"><i style="background:${lo.color}"></i><b>${val}</b></div>${extra ? '<div class="l" style="margin-left:16px">' + extra + '</div>' : ''}`;
+    html += `<div class="l"><i style="background:${loColor(lo)}"></i><b>${val}</b></div>${extra ? '<div class="l" style="margin-left:16px">' + extra + '</div>' : ''}`;
   }
   const tip = $('tip');
   tip.innerHTML = html; tip.style.display = 'block';
@@ -1088,7 +1094,7 @@ function renderTable() {
     }
   };
   let head = `<tr><th>Range (${distLabel()})</th>` + los.map(lo =>
-    `<th style="color:${lo.color}">${esc(loName(lo))}</th>`).join('') + '</tr>';
+    `<th><i class="sw" style="background:${loColor(lo)}"></i>${esc(loName(lo))}</th>`).join('') + '</tr>';
   const n = Math.max(...los.map(lo => results[lo.id].rows.length));
   let body = '';
   for (let i = 0; i < n; i++) {
@@ -1162,7 +1168,7 @@ $('trSolve').onclick = () => {
   const R = results[lo.id];
   if (!R || !R.build) return;
   const range = parseFloat($('trRange').value), drop = parseFloat($('trDrop').value);
-  if (!(range > 0) || !isFinite(drop)) { $('trResult').innerHTML = '<span style="color:var(--err)">Need a range and an observed POI.</span>'; return; }
+  if (!(range > 0) || !isFinite(drop)) { $('trResult').innerHTML = '<span style="color:var(--err-ink)">Need a range and an observed POI.</span>'; return; }
   const obs = [{ range_yd: range, observed_drop_in: drop, group_moa: parseFloat($('trGroup').value) || null }];
   truingPending = { lo, obs };
   $('trResult').textContent = 'Solving…';
@@ -1171,12 +1177,12 @@ $('trSolve').onclick = () => {
 function onTrued(res) {
   if (!truingPending) return;
   const { lo, obs } = truingPending;
-  if (!res.ok) { $('trResult').innerHTML = `<span style="color:var(--warn)">${esc(res.reason)}</span>`; truingPending = null; return; }
+  if (!res.ok) { $('trResult').innerHTML = `<span style="color:var(--warn-ink)">${esc(res.reason)}</span>`; truingPending = null; return; }
   const before = results[lo.id].build.muzzle;
   $('trResult').innerHTML = `MV ${Math.round(before.mv)} → <b>${Math.round(res.mv)} fps</b>
     (±${Math.round(res.rmsFps)})${res.bcScale ? ` · BC ×${res.bcScale.toFixed(3)}` : ''}
-    <button id="trSave" style="margin-left:10px">Save truing</button>` +
-    (obs[0].group_moa ? ` <button id="trPrec">Set precision ${obs[0].group_moa} MOA</button>` : '');
+    <button id="trSave" class="btn-primary" style="margin-left:10px">Save truing</button>` +
+    (obs[0].group_moa ? ` <button id="trPrec" class="btn-ghost" style="margin-left:8px">Set precision ${obs[0].group_moa} MOA</button>` : '');
   $('trSave').onclick = () => {
     const c = conditions();
     lo.truing.push({ date: Date.now(), observations: obs,
@@ -1220,6 +1226,15 @@ $('metricSel').onchange = () => { store.ui.metric = $('metricSel').value; saveSt
 $('allCols').onchange = renderTable; $('allColsLo').onchange = renderTable;
 $('trLo') && ($('trLo').onchange = renderTruing);
 window.addEventListener('resize', () => { if (store.loadouts.length) drawChart(); });
+/* loadout colours are theme tokens looked up at draw time (loColor()), so a
+   flip needs a full repaint — render() also refreshes card/legend swatches,
+   not just the canvas. */
+const repaintOnThemeChange = () => { if (store.loadouts.length) render(); };
+window.addEventListener('themechange', repaintOnThemeChange);
+const darkModeQuery = window.matchMedia('(prefers-color-scheme: dark)');
+(darkModeQuery.addEventListener
+  ? darkModeQuery.addEventListener('change', repaintOnThemeChange)
+  : darkModeQuery.addListener(repaintOnThemeChange));
 
 /* ---------- rail wiring ---------- */
 function readRail() {
@@ -1296,7 +1311,7 @@ document.querySelectorAll('#empty button[data-demo]').forEach(b => b.onclick = (
   const d = demos[+b.dataset.demo];
   if (!gunById(d.gun_id) || !loadById(d.load_id)) return;
   store.loadouts.push(Object.assign({ id: 'lo-' + Date.now() + Math.random().toString(36).slice(2, 5),
-    color: COLORS[store.loadouts.length % COLORS.length], bc_model: null,
+    ci: store.loadouts.length % SERIES_N, bc_model: null,
     precision_moa: null, pinned_range_yd: null, temp_sens_override: null, chrono: null, truing: [] }, d));
   saveStore(); syncVis(); recompute();
 });
@@ -1548,7 +1563,7 @@ function renderSelftest(res) {
     if (store.loadouts.length) return;
     const demo = { gun_id: 'glock-19', load_id: 'fed-ae-9mm-124' };
     if (gunById(demo.gun_id) && loadById(demo.load_id)) {
-      store.loadouts.push(Object.assign({ id: 'lo-tour-' + Date.now(), color: COLORS[0],
+      store.loadouts.push(Object.assign({ id: 'lo-tour-' + Date.now(), ci: 0,
         bc_model: null, precision_moa: null, pinned_range_yd: null, temp_sens_override: null,
         chrono: null, truing: [] }, demo));
       saveStore(); syncVis(); recompute();
@@ -1565,8 +1580,8 @@ function renderSelftest(res) {
     box = document.createElement('div'); box.className = 'tut-box';
     box.innerHTML = `<div class="step"></div><h4></h4><div class="body"></div>
       <div class="tut-progress"><i></i></div>
-      <div class="foot"><button class="tut-skip">Skip tour</button><span class="sp"></span>
-        <button class="tut-back">‹ Back</button><button class="tut-next">Next ›</button></div>`;
+      <div class="foot"><button class="tut-skip btn-ghost">Skip tour</button><span class="sp"></span>
+        <button class="tut-back btn-ghost">‹ Back</button><button class="tut-next btn-primary">Next ›</button></div>`;
     document.body.append(catchEl, hole, box);
     box.querySelector('.tut-next').onclick = next;
     box.querySelector('.tut-back').onclick = back;
