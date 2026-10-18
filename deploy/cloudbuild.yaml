@@ -1,0 +1,76 @@
+# Cloud Build pipeline: source -> image -> Cloud Run revision.
+#
+# Wire it to a trigger on the default branch and Cloud Run mirrors what Render
+# already does on push. Both platforms then deploy the same commit, which is
+# the point: Render is production, Cloud Run is the standby that must not rot.
+#
+#   gcloud builds submit --config deploy/cloudbuild.yaml
+#
+# Substitutions come from the trigger; _REGION and _REPO have defaults so a
+# manual submit works with no arguments.
+substitutions:
+  _REGION: us-central1
+  _REPO: gun-scout
+  _SERVICE: gun-scout
+
+steps:
+  # Build. --cache-from keeps the dependency layer warm across commits, so a
+  # code-only change is a ~20s build instead of a full pip install.
+  - id: build
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - --cache-from=${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_SERVICE}:latest
+      - -t=${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_SERVICE}:$COMMIT_SHA
+      - -t=${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_SERVICE}:latest
+      - .
+
+  - id: push
+    name: gcr.io/cloud-builders/docker
+    args: [push, --all-tags,
+           "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_SERVICE}"]
+
+  # Smoke the image before it can take traffic: boot it and require the
+  # readiness probe to pass. Catches a broken dependency or a missing system
+  # binary (curl — see the Dockerfile) here rather than in a rollout.
+  - id: smoke
+    name: gcr.io/cloud-builders/docker
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -e
+        docker run -d --name smoke -e PORT=8080 -p 8080:8080 \
+          "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_SERVICE}:$COMMIT_SHA"
+        for i in $(seq 1 30); do
+          if curl -fsS http://localhost:8080/api/v1/readyz; then
+            curl -fsS http://localhost:8080/api/v1/meta > /dev/null
+            docker rm -f smoke; exit 0
+          fi
+          sleep 2
+        done
+        echo "image never became ready"; docker logs smoke; docker rm -f smoke; exit 1
+
+  # Deploy the pinned digest, not :latest — a revision should always name the
+  # exact image it runs.
+  - id: deploy
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - ${_SERVICE}
+      - --image=${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_SERVICE}:$COMMIT_SHA
+      - --region=${_REGION}
+      # Everything else (scaling pins, probes, volume, env) stays in
+      # service.yaml so this file never becomes a second source of truth.
+      - --quiet
+
+images:
+  - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_SERVICE}:$COMMIT_SHA
+  - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_SERVICE}:latest
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+  machineType: E2_HIGHCPU_8
+timeout: 1200s

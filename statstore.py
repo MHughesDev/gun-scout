@@ -261,6 +261,7 @@ class StatEngine:
         self._version = 0                   # bumped on every stat-affecting change
         self._auctions: dict[int, dict] = {}  # RAM-only auction close tracking
         self._started = False
+        self._loaded = False    # facts are in RAM (see `loaded`)
 
     # ---- lifecycle -------------------------------------------------------
 
@@ -294,6 +295,7 @@ class StatEngine:
         self._open()
         self._migrate_legacy()
         n = self._load()
+        self._loaded = True
         log.info("stat engine up: %d facts loaded", n)
         threading.Thread(target=self._flush_loop, daemon=True,
                          name="stat-flusher").start()
@@ -385,6 +387,13 @@ class StatEngine:
     @property
     def version(self) -> int:
         return self._version
+
+    @property
+    def loaded(self) -> bool:
+        """True once the fact set has been read off disk. Stats answered
+        before that would describe an empty market, so a container's
+        readiness probe holds traffic until it flips (see api_v1.readyz)."""
+        return self._loaded
 
     def facts(self, vertical: str) -> list[dict]:
         """Snapshot of every fact for a vertical (treat as read-only)."""

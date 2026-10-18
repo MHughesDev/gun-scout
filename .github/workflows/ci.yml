@@ -1,0 +1,62 @@
+# Two independent halves of one product, checked independently.
+#
+# The backend job is the one that gates a Render deploy in practice: Render
+# auto-deploys the default branch on push, so a red build here is a warning
+# that production already has the problem. The mobile job gates a release
+# instead — a broken app binary can't be rolled back, only replaced.
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+jobs:
+  backend:
+    name: Backend (Flask API)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          # Matches render.yaml's PYTHON_VERSION and the Dockerfile's base.
+          python-version: '3.13'
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: API contract tests
+        # GUN_SCOUT_DB is redirected inside the tests, but set it here too so a
+        # future test that starts the engine early can't write into the repo.
+        env:
+          GUN_SCOUT_DB: ${{ runner.temp }}/gun_scout.db
+        run: python -m unittest discover -s tests -v
+
+      - name: Byte-compile every module
+        # Cheap catch-all for syntax errors in the scrapers, which have no
+        # tests of their own (they'd have to hit live retail sites to be real).
+        run: python -m compileall -q . -x 'mobile|node_modules'
+
+  mobile:
+    name: Mobile (Expo app)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+
+      - run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npx eslint .

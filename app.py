@@ -20,6 +20,7 @@ import os
 
 from flask import Flask, jsonify, request, send_from_directory
 
+import api_v1
 import cabelas_token
 import close_poller
 import remote
@@ -33,6 +34,10 @@ from models import Listing, SearchCriteria
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
 
 app = Flask(__name__, static_folder="static", static_url_path="")
+# Stable, versioned surface for the mobile app (/api/v1). The web UI keeps
+# using the unversioned routes below — it ships with the server, so it can
+# follow their shape; an installed binary can't. See api_v1.py.
+app.register_blueprint(api_v1.bp)
 statstore.start()  # load facts, migrate any legacy db, start write-behind flusher
 close_poller.start()  # records final hammer prices of ended auctions (idles without an API key)
 remote.start()  # releases queued jobs when the operator's worker is offline

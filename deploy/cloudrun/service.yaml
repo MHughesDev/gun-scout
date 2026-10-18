@@ -1,0 +1,134 @@
+# Cloud Run service definition — the scale-out target, not today's production.
+#
+#   gcloud run services replace deploy/cloudrun/service.yaml --region us-central1
+#
+# Render stays the live deployment (render.yaml). This exists so the move is a
+# deploy rather than a project: the image is identical (../../Dockerfile), and
+# every difference between the two platforms is captured here in one file.
+#
+# READ THIS BEFORE RAISING maxScale
+# --------------------------------
+# The stats fact store (statstore.py) and every in-flight search (store.py,
+# remote.py) live in THIS PROCESS'S MEMORY. Two instances would mean two
+# divergent markets and searches whose polls land on the instance that never
+# ran them. maxScale is pinned to 1 on purpose and stays there until the state
+# externalization in docs/mobile-platform-plan.md §4.2 ships. Until then Cloud
+# Run buys faster cold starts, real health probes, and a proper rollout story
+# — not horizontal scale.
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: gun-scout
+  annotations:
+    run.googleapis.com/launch-stage: GA
+    # Direct VPC egress is deliberately NOT set: scrapers must leave from a
+    # normal internet path, and pinning them behind a static NAT IP would make
+    # the Cloudflare-fronted retailers easier, not harder, to block.
+spec:
+  template:
+    metadata:
+      annotations:
+        # One instance. See the header — this is a correctness constraint.
+        autoscaling.knative.dev/maxScale: "1"
+        # Keep one warm. A cold start reloads the entire fact set from disk;
+        # a phone waiting on that is a 10-second search. Also see below: the
+        # background threads only exist while an instance does.
+        autoscaling.knative.dev/minScale: "1"
+        # CPU always allocated. This is the setting that makes or breaks the
+        # app on Cloud Run. Three daemon threads do work BETWEEN requests —
+        # the stat flusher (write-behind to SQLite every ~2s), the auction
+        # close poller, and the remote-job sweeper. Under the default
+        # request-scoped CPU they would be frozen the moment a response is
+        # written, so dirty facts would sit unflushed and dead worker jobs
+        # would never be released.
+        run.googleapis.com/cpu-throttling: "false"
+        run.googleapis.com/startup-cpu-boost: "true"
+        run.googleapis.com/execution-environment: gen2
+    spec:
+      # waitress serves with 16 threads; searches are I/O-bound and polls are
+      # cheap, so a modest queue on top of that is fine. Raising this without
+      # raising waitress's thread count just moves the queue.
+      containerConcurrency: 40
+      # Long enough for a capped mobile search to finish server-side; the app
+      # polls incrementally, so no single request should approach it.
+      timeoutSeconds: 300
+      serviceAccountName: gun-scout-run@PROJECT_ID.iam.gserviceaccount.com
+      containers:
+        - name: gun-scout
+          image: us-central1-docker.pkg.dev/PROJECT_ID/gun-scout/gun-scout:latest
+          ports:
+            - name: http1
+              containerPort: 8080
+          resources:
+            limits:
+              # The fact store is the memory driver: every observed listing is
+              # a compact dict held for the life of the process. 512Mi covers
+              # the current fact count with headroom; watch it, and move to
+              # §4.2 (Postgres-backed stats) rather than climbing to 4Gi.
+              memory: 1Gi
+              cpu: "1"
+          env:
+            # Presence of PORT already puts app.py in hosted mode; this is
+            # explicit so the intent survives a refactor.
+            - name: GS_PUBLIC
+              value: "1"
+            - name: GUN_SCOUT_DB
+              value: /data/gun_scout.db
+            # Sites delegated to the operator's home worker. Same reasoning as
+            # Render: a datacenter IP is a datacenter IP, and GCP's ranges are
+            # judged at least as harshly as Render's.
+            - name: GS_REMOTE_SITES
+              value: "*"
+            # Secrets live in Secret Manager, never in this file.
+            - name: GS_WORKER_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: gs-worker-key
+                  key: latest
+            - name: GS_TOKEN_PUSH_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: gs-token-push-key
+                  key: latest
+            - name: GUNBROKER_DEV_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: gunbroker-dev-key
+                  key: latest
+          volumeMounts:
+            - name: stats
+              mountPath: /data
+          # Startup gate: readyz flips only once the fact set is loaded, so no
+          # request is ever answered from an empty market. failureThreshold x
+          # periodSeconds is the cold-start budget — generous, because losing
+          # a container to a slow load would be worse than a slow first boot.
+          startupProbe:
+            httpGet:
+              path: /api/v1/readyz
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 24
+          # Liveness only asks whether the process serves. Deliberately NOT
+          # readyz: a scraper being blocked, or the fact store being large, is
+          # never a reason to kill the instance holding every in-flight search.
+          livenessProbe:
+            httpGet:
+              path: /api/v1/healthz
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+      volumes:
+        # INTERIM, and the weakest part of this manifest. SQLite over gcsfuse
+        # works only because maxScale is 1 (a single writer, no lock
+        # contention) — it is not a supported multi-writer configuration and
+        # must not outlive that pin. The moment stats move to Postgres
+        # (§4.2) this volume and its caveat disappear.
+        - name: stats
+          csi:
+            driver: gcsfuse.run.googleapis.com
+            volumeAttributes:
+              bucketName: PROJECT_ID-gun-scout-stats
+  traffic:
+    - percent: 100
+      latestRevision: true

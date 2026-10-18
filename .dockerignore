@@ -1,0 +1,30 @@
+# Keep the build context small and free of anything secret or machine-local.
+.git
+.github
+.claude
+__pycache__/
+*.pyc
+
+# The mobile app is built by EAS, not baked into the server image.
+mobile/
+
+# Local state and secrets — never in a layer.
+gun_scout.db
+gun_scout.db-shm
+gun_scout.db-wal
+cabelas_token.json
+cabelas_token.txt
+gunbroker_key.txt
+*.log
+
+# Node minter: its node_modules and browser profile (session cookies) are the
+# operator's, and the hosted app can't mint tokens anyway — it receives them.
+cabelas_minter/node_modules/
+cabelas_minter/profile/
+
+# Docs and specs don't change behaviour; excluding them keeps code-only
+# deploys from busting the image cache.
+*.md
+!README.md
+docs/
+run.bat
