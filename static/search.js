@@ -110,12 +110,23 @@ function fieldMarkup(f) {
       ${comboMarkup(f.min_id, f.min_placeholder || 'min')}
       ${comboMarkup(f.max_id, f.max_placeholder || 'max')}</div>`;
   if (f.type === 'checkbox')
-    return `<label class="chk" style="display:flex;align-items:center;gap:7px;text-transform:none;letter-spacing:0;font-size:13px;color:var(--text)">
-      <input type="checkbox" id="${f.id}" style="width:auto"${f.default ? ' checked' : ''}> ${esc(f.label)}</label>`;
+    return `<label class="chk"><input type="checkbox" id="${f.id}"${f.default ? ' checked' : ''}> ${esc(f.label)}</label>`;
   return '';
 }
+/* the keyword field is promoted into the hero search bar (spec §13); every
+   other schema field stays in the filter rail. criteria()/fillForm() address
+   inputs by id regardless of where they live in the DOM, so this split is
+   purely presentational. */
 function buildForm() {
-  $('formFields').innerHTML = SCHEMA.inputs.map(f =>
+  const heroIdx = SCHEMA.inputs.findIndex(f => f.id === 'keyword');
+  const heroField = heroIdx >= 0 ? SCHEMA.inputs[heroIdx] : null;
+  const restFields = SCHEMA.inputs.filter((f, i) => i !== heroIdx);
+  $('heroKeyword').innerHTML = heroField
+    ? `<label for="${heroField.id}" class="sr-only">${esc(heroField.label)}</label>
+       <input id="${heroField.id}" class="hero-input" autocomplete="off"
+              placeholder="${esc(heroField.placeholder || heroField.label)}">`
+    : '';
+  $('formFields').innerHTML = restFields.map(f =>
     `<div class="field">${fieldMarkup(f)}${f.note ? `<div class="note">${esc(f.note)}</div>` : ''}</div>`
   ).join('');
   for (const f of SCHEMA.inputs) {
@@ -125,6 +136,9 @@ function buildForm() {
       makeCombo(f.max_id, f.num_presets || []);
     }
   }
+  if (heroField) $(heroField.id).addEventListener('keydown', e => {
+    if (e.key === 'Enter') runSearch();
+  });
 }
 
 /* collect the form into a flat criteria object; the backend routes any
@@ -294,18 +308,30 @@ function currentView() {
   return view;
 }
 function primaryPrice(l) { return VERTICAL === 'ammo' ? l.price_per_round : l.price; }
+/* the results-summary hero card (spec §15's "supporting card") — idle state
+   before a search has ever run, or after Clear search / an empty result. */
+function resetSummary() {
+  $('sumCount').textContent = '0';
+  $('sumCountLabel').textContent = 'listings';
+  $('sumSites').textContent = '0 sites';
+  $('sumPrices').hidden = true;
+}
 function renderStats(view) {
   const prices = view.map(primaryPrice).filter(p => p != null).sort((a, b) => a - b);
   const sites = new Set(view.map(l => l.site)).size;
-  let s = `${view.length} listing${view.length === 1 ? '' : 's'} · ${sites} site${sites === 1 ? '' : 's'}`;
+  $('sumCount').textContent = view.length.toLocaleString();
+  $('sumCountLabel').textContent = view.length === 1 ? 'listing' : 'listings';
+  $('sumSites').textContent = `${sites} site${sites === 1 ? '' : 's'}`;
   if (prices.length) {
     const median = prices[Math.floor(prices.length / 2)];
     const fmt = VERTICAL === 'ammo'
       ? v => (v < 1 ? '¢' + (v * 100).toFixed(1) + '/rd' : '$' + v.toFixed(2) + '/rd')
       : v => '$' + Number(v).toLocaleString();
-    s += ` · ${fmt(prices[0])} low · ${fmt(median)} median`;
+    $('sumPrices').textContent = `${fmt(prices[0])} low · ${fmt(median)} median`;
+    $('sumPrices').hidden = false;
+  } else {
+    $('sumPrices').hidden = true;
   }
-  $('stats').textContent = s;
 }
 
 let viewMode = localStorage.getItem('gs_view_' + VERTICAL) || (SCHEMA ? SCHEMA.defaults.view : 'table');
@@ -319,6 +345,7 @@ function renderRows() {
   if (!rows.length) {
     $('tbl').style.display = 'none'; $('grid').style.display = 'none';
     $('empty').style.display = ''; $('toolbar').style.display = 'none';
+    resetSummary();
     updateHScroll(); return;
   }
   $('empty').style.display = 'none'; $('toolbar').style.display = '';
